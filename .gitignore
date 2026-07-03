@@ -1,0 +1,21 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/
+*.xcodeproj
+.netrc
+
+# secrets / credentials
+.env
+*.env
+*.pem
+*.key
+*.p12
+*.mobileprovision
+*.certSigningRequest
+id_rsa*
+id_ed25519*
+secrets/
+*credentials*
