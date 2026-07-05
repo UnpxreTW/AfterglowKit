@@ -33,7 +33,9 @@ let package = Package(
 		),
 		.testTarget(
 			name: "PTTBig5CodecTests",
-			dependencies: ["PTTBig5Codec"]
+			dependencies: ["PTTBig5Codec"],
+			// golden 輸入：真實登入畫面 raw byte 捕獲（StreamTranscoder 整段過機驗收）。
+			resources: [.copy("Captures")]
 		),
 	]
 )
