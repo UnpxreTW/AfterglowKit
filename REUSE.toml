@@ -6,6 +6,10 @@ version = 1
 path = [
 	".gitattributes",
 	".gitignore",
+	"NOTICE",
+	"THIRD-PARTY-NOTICES.md",
+	"Package.swift",
+	"Package.resolved",
 	"README.md",
 	"docs/CODEOWNERS",
 	"docs/SECURITY.md",

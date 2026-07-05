@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Generated UAO 對照表 — PR diff 摺疊、語言統計排除。
+Sources/PTTBig5Codec/Generated/UAOTable.swift linguist-generated
