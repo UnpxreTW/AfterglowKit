@@ -6,10 +6,24 @@ version = 1
 path = [
 	".gitattributes",
 	".gitignore",
+	"NOTICE",
+	"THIRD-PARTY-NOTICES.md",
+	"Package.swift",
+	"Package.resolved",
 	"README.md",
 	"docs/CODEOWNERS",
 	"docs/SECURITY.md",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Unpxre (GitHub: UnpxreTW)"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+	"Tests/PTTBig5CodecTests/Captures/cap-bbs.bin",
+	"Tests/PTTBig5CodecTests/Captures/cap-bbsu.bin",
+	"Tests/PTTBig5CodecTests/Captures/cap-bbs-none.bin",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Unpxre (GitHub: UnpxreTW) — pre-login screen raw byte captures, recorded as StreamTranscoder golden test fixtures"
 SPDX-License-Identifier = "Apache-2.0"
