@@ -157,5 +157,4 @@ private struct UncheckedSendableBox<Wrapped>: @unchecked Sendable {
 
 	/// 被包裝的值。
 	let wrapped: Wrapped
-
 }
