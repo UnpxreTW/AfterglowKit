@@ -15,6 +15,9 @@ let package = Package(
 	],
 	dependencies: [
 		.package(url: "https://github.com/UnpxreTW/SwiftStyleKit.git", from: "2.0.0"),
+		// SSH 依賴走 exact pin：transport 對演算法組合與 delegate API 敏感、升版須人工重驗。
+		.package(url: "https://github.com/apple/swift-nio.git", exact: "2.101.2"),
+		.package(url: "https://github.com/apple/swift-nio-ssh.git", exact: "0.14.0"),
 	],
 	targets: [
 		// Big5-UAO codec：對照表 blob + loader + 串流轉碼器（零外部 dep、可孤立編譯）。
@@ -24,9 +27,15 @@ let package = Package(
 				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
 			]
 		),
-		// SSH 連線引擎：slot 配額仲裁、登入頻率閘、[Y/n] 應答、keepalive、顯式 close。
+		// SSH 連線引擎：slot 配額仲裁、登入頻率閘、[Y/n] 應答、keepalive、顯式 close，
+		// 以及架在官方 swift-nio-ssh 上的薄 transport（PTY 位元組管道）。
 		.target(
 			name: "PTTConnection",
+			dependencies: [
+				.product(name: "NIOCore", package: "swift-nio"),
+				.product(name: "NIOPosix", package: "swift-nio"),
+				.product(name: "NIOSSH", package: "swift-nio-ssh"),
+			],
 			plugins: [
 				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
 			]
@@ -47,7 +56,12 @@ let package = Package(
 		),
 		.testTarget(
 			name: "PTTConnectionTests",
-			dependencies: ["PTTConnection"]
+			dependencies: [
+				"PTTConnection",
+				.product(name: "NIOCore", package: "swift-nio"),
+				.product(name: "NIOEmbedded", package: "swift-nio"),
+				.product(name: "NIOSSH", package: "swift-nio-ssh"),
+			]
 		),
 	]
 )
