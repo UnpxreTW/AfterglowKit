@@ -93,7 +93,7 @@ public struct DuplicateLoginPromptScanner: Sendable {
 				return
 			}
 		}
-		if byte >= 0xA1, byte <= 0xFE { // Big5 lead：持有、打斷 pattern
+		if byte >= 0x81, byte <= 0xFE { // Big5 lead：持有、打斷 pattern（含 UAO 使用者定義區 0x81–0xA0）
 			pendingLead = true
 			matched = 0
 			return
