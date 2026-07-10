@@ -20,7 +20,8 @@
 /// 其餘 stream 規則（皆有實測根據）：
 /// - 起手剝 19-byte HTTP 前導 `HTTP/1.1 200 OK\r\n\r\n`（錨定 pattern、非硬編長度；前導不存在則不剝）。
 /// - NUL（0x00）忽略（terminal 慣例），永不漏進輸出。
-/// - Big5 lead = 0xA1–0xFE，配對後查 ``UAODecodeTable/lookup(_:)``；miss → 每半形補 `'?'`。
+/// - Big5 lead 範圍引用 ``UAODecodeTable/leadRange``（單一正本，非本檔另訂）；配對後查
+///   ``UAODecodeTable/lookup(_:)``；miss → 每半形補 `'?'`。
 /// - bbsu target：偵測第一個 `ESC[H ESC[2J` 後切 UTF-8 passthrough（切點 session-specific、不硬編 byte offset）；
 ///   bbs target 全程 Big5。
 public struct StreamTranscoder: Sendable {
@@ -198,7 +199,7 @@ public struct StreamTranscoder: Sendable {
 			flushHeldEscapes(into: &out)
 			// 落下去把 byte 當無 pending lead 的新 byte 處理。
 		}
-		if byte >= 0xA1, byte <= 0xFE { // Big5 lead：持有等 trail
+		if UAODecodeTable.leadRange.contains(byte) { // Big5 lead：持有等 trail（範圍＝ codec 正本，含 UAO 使用者定義區 0x81–0xA0）
 			pendingLead = byte
 			return
 		}
@@ -207,7 +208,7 @@ public struct StreamTranscoder: Sendable {
 			lastEmittedEscapeWasHome = false
 			return
 		}
-		// 0x80–0xA0：不可能是 lead 也非 ASCII → 失敗 byte
+		// 0x80（唯一剩餘值）：非 ASCII 也非合法 lead → 失敗 byte
 		out.append(.invalid(byte))
 		lastEmittedEscapeWasHome = false
 	}
