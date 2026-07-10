@@ -1,5 +1,5 @@
-# REUSE 設定：批次涵蓋無法掛 inline SPDX header 的 manifest / 設定 / 文件 / 資料檔。
-# 已掛 header 的 .swift 原始碼不在此列；授權全文見 LICENSES/。
+# REUSE 設定：批次涵蓋無法掛 inline SPDX header 的 manifest / 設定 / 文件 / 資料檔，
+# 以及 .swift 原始碼的 aggregate 保險網（見末節說明）；授權全文見 LICENSES/。
 version = 1
 
 [[annotations]]
@@ -26,4 +26,14 @@ path = [
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Unpxre (GitHub: UnpxreTW) — pre-login screen raw byte captures, recorded as StreamTranscoder golden test fixtures"
+SPDX-License-Identifier = "Apache-2.0"
+
+# .swift 原始碼每檔皆掛 inline SPDX header（正本）。此節是 aggregate 保險網：
+# reuse-tool 的編碼偵測只取檔案前 2048 bytes 作 heuristics，該切點落在 UTF-8
+# 多位元組（CJK 註解）中間時，部分環境會把整檔誤判為 binary 而跳過 inline
+# header（fsfe/reuse-tool#1244 同類、6.2.0 未收修；誤判與否隨內容 byte 佈局浮動）。
+[[annotations]]
+path = ["Sources/**/*.swift", "Tests/**/*.swift"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Unpxre (GitHub: UnpxreTW)"
 SPDX-License-Identifier = "Apache-2.0"
