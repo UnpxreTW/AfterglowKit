@@ -112,7 +112,7 @@ public actor PTTConnectionEngine {
 	///
 	/// - Parameters:
 	///   - configuration: 組態（預設 3 slot、keepalive 20 分）。
-	///   - connector: transport 工廠（正式環境 ``CitadelPTTTransportConnector``、測試注入 fake）。
+	///   - connector: transport 工廠（正式環境注入具體 SSH transport connector、測試注入 fake）。
 	///   - clock: 時間來源（測試注入假時鐘）。
 	public init(
 		configuration: Configuration = Configuration(),

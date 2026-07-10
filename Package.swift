@@ -15,7 +15,6 @@ let package = Package(
 	],
 	dependencies: [
 		.package(url: "https://github.com/UnpxreTW/SwiftStyleKit.git", from: "2.0.0"),
-		.package(url: "https://github.com/orlandos-nl/Citadel.git", exact: "0.12.1"),
 	],
 	targets: [
 		// Big5-UAO codec：對照表 blob + loader + 串流轉碼器（零外部 dep、可孤立編譯）。
@@ -28,9 +27,6 @@ let package = Package(
 		// SSH 連線引擎：slot 配額仲裁、登入頻率閘、[Y/n] 應答、keepalive、顯式 close。
 		.target(
 			name: "PTTConnection",
-			dependencies: [
-				.product(name: "Citadel", package: "Citadel"),
-			],
 			plugins: [
 				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
 			]

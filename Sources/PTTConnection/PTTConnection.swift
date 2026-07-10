@@ -48,8 +48,8 @@ public enum PTTConnectionError: Error, Equatable {
 ///   命中即自動應答 `Y`（踢舊留新、前景優先），一條連線只應答一次。
 /// - 閒置達 keepalive 間隔即送 `ESC OA ESC OB` 載荷（上/下方向鍵、淨效果歸零的
 ///   client anti-idle 慣例，pttbbs `mbbsd/io.c` 明文承認）。keepalive 只對抗 NAT——
-///   站方 OSS 的 in-session idle 踢線是死碼。Citadel 0.12.1 無 SSH transport 層
-///   keepalive API（上游 repo 查證），故直接採載荷慣例；上游補 API 後可再降回 transport 層。
+///   站方 OSS 的 in-session idle 踢線是死碼。本層不假設底層 transport 提供
+///   SSH keepalive API，直接採協定層載荷慣例、對任何 ``PTTTransport`` 實作皆成立。
 /// - 終止一律顯式 `close()`：讀流不響應 task cancellation（實連驗證）、
 ///   取消讀取任務會永久卡住，只能關 transport 讓流自然結束。
 public actor PTTConnection {

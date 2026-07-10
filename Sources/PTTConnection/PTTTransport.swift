@@ -42,7 +42,7 @@ public struct PTTEndpoint: Equatable, Sendable {
 /// 一條已建立的 SSH PTY 位元組管道抽象。
 ///
 /// 引擎邏輯（slot 仲裁 / 頻率閘 / prompt 應答 / keepalive）只依賴此協定，
-/// 真實網路走 ``CitadelPTTTransport``、單元測試注入 fake——引擎測試永不連真站
+/// 真實網路走具體 transport 實作（consumer 注入）、單元測試注入 fake——引擎測試永不連真站
 /// （PTT 封鎖雲端機房 IP，CI 上連線必失敗且屬對外行為）。
 public protocol PTTTransport: Sendable {
 
