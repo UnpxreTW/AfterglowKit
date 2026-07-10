@@ -122,6 +122,18 @@ private final class TranscoderTests {
 		#expect(tokens.serializeUTF8() != [0x20, 0x20])
 	}
 
+	/// zoneUserDefined 區（lead 0x81–0xA0，UAO 使用者定義區，標準 Big5 未收的罕用漢字為主）
+	/// 在串流層須可解——鎖住回歸：table 層 `UAODecodeTable.lookup` 早已驗證 0x8140 可解出丗
+	/// （`UAOTableTests.pointer corners`），但串流層曾把 lead 判定窄化為 0xA1–0xFE，
+	/// 導致這段落地變 `.invalid(0x81) + .ascii(0x40)` 雜訊而非整字。
+	@Test
+	private func `case 10 zoneUserDefined lead range decodes correctly`() {
+		var transcoder: StreamTranscoder = .init(target: .bbs)
+		let tokens = transcoder.feed([0x81, 0x40]) // 0x8140 → 丗 U+4E17（zoneUserDefined 首格）
+		#expect(tokens == [.big5Char("\u{4E17}")])
+		#expect(tokens != [.invalid(0x81), .ascii(0x40)])
+	}
+
 	/// 高位區（lead 0xA1–0xFE × 合法 trail）在 UAO 正本 100% 滿表、實流不會 miss，
 	/// 故注入空表逼出 fallback：每半形補 `'?'`、非整字 U+FFFD。
 	@Test
