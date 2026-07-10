@@ -91,4 +91,17 @@ private final class DuplicateLoginPromptScannerTests {
 		let hit = scanner.scan([0x5B] + Self.pattern) // "[[Y/n]"
 		#expect(hit)
 	}
+
+	/// UAO 使用者定義區 lead（0x81–0xA0）開頭的雙位元組字，其 trail 恰為 `[` 時
+	/// 不可被拆開、跟後續真實 ASCII `Y/n]` 誤配成完整 prompt。
+	@Test
+	private func `no false match when uao lead trail forms bracket`() {
+		var scanner: DuplicateLoginPromptScanner = .init()
+		// 0x81 為 UAO 使用者定義區 lead（合法範圍 0x81–0xA0）、trail 0x5B 恰為 pattern[0]；
+		// 若 lead 未被辨識，0x5B 會落回邊界比對、接上後續 "Y/n]" 誤湊成完整 [Y/n]。
+		let bytes: [UInt8] = [0x81, 0x5B, 0x59, 0x2F, 0x6E, 0x5D]
+		let hit = scanner.scan(bytes)
+		#expect(!hit)
+		#expect(!scanner.detected)
+	}
 }
