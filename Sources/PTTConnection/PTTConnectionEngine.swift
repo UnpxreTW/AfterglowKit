@@ -112,11 +112,12 @@ public actor PTTConnectionEngine {
 	///
 	/// - Parameters:
 	///   - configuration: 組態（預設 3 slot、keepalive 20 分）。
-	///   - connector: transport 工廠（正式環境注入具體 SSH transport connector、測試注入 fake）。
+	///   - connector: transport 工廠（預設 ``NIOSSHPTTTransportConnector``＝直連真實 SSH，
+	///     `PTTConnectionEngine()` 即為完整接線的引擎；測試注入 fake、引擎測試永不連真站）。
 	///   - clock: 時間來源（測試注入假時鐘）。
 	public init(
 		configuration: Configuration = Configuration(),
-		connector: any PTTTransportConnector,
+		connector: any PTTTransportConnector = NIOSSHPTTTransportConnector(),
 		clock: EngineClock = .continuous
 	) {
 		self.configuration = configuration

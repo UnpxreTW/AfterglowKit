@@ -18,6 +18,9 @@ let package = Package(
 		// SSH 依賴走 exact pin：transport 對演算法組合與 delegate API 敏感、升版須人工重驗。
 		.package(url: "https://github.com/apple/swift-nio.git", exact: "2.101.2"),
 		.package(url: "https://github.com/apple/swift-nio-ssh.git", exact: "0.14.0"),
+		// swift-crypto 僅測試用（in-process SSH server 的 host key 生成）；
+		// 本就是 swift-nio-ssh 的 transitive 依賴、exact pin 與既解析版本一致。
+		.package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.0"),
 	],
 	targets: [
 		// Big5-UAO codec：對照表 blob + loader + 串流轉碼器（零外部 dep、可孤立編譯）。
@@ -58,6 +61,7 @@ let package = Package(
 			name: "PTTConnectionTests",
 			dependencies: [
 				"PTTConnection",
+				.product(name: "Crypto", package: "swift-crypto"),
 				.product(name: "NIOCore", package: "swift-nio"),
 				.product(name: "NIOEmbedded", package: "swift-nio"),
 				.product(name: "NIOSSH", package: "swift-nio-ssh"),

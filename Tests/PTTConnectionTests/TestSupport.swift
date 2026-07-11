@@ -259,6 +259,11 @@ final class FakeConnector: PTTTransportConnector, @unchecked Sendable {
 // MARK: - 測試共用小工具
 
 /// 反覆推進假時鐘＋讓出執行權，直到條件成立或步數用盡（假時鐘下的收斂等待）。
+///
+/// 讓出執行權走**極短真實 sleep**（每步 100µs、上限 200 步＝最多 20ms）而非 `Task.yield()`：
+/// 並行測試把 cooperative pool 佔滿時，純 yield 的緊迴圈可能整輪跑完而受測背景 task
+/// 一次都沒被排程（曾致 prompt 應答斷言偶發失敗）；微幅真實等待讓 executor 有機會
+/// 排空佇列。與「假時鐘、不等真實時間」不衝突——等待量不隨模擬時長增長、只付排程成本。
 func advanceUntil(
 	_ clock: TestClock,
 	step: Duration = .seconds(1),
@@ -268,8 +273,7 @@ func advanceUntil(
 	for _ in 0 ..< limit {
 		if await condition() { return true }
 		clock.advance(by: step)
-		await Task.yield()
-		await Task.yield()
+		try? await Task.sleep(for: .microseconds(100))
 	}
 	return await condition()
 }
