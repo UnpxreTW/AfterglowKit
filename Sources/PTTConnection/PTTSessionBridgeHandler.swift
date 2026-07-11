@@ -18,7 +18,8 @@ import NIOSSH
 ///   ``ChannelFailureEvent``（channel request 的回覆序與請求序一致），
 ///   不依賴 `triggerUserOutboundEvent` future 的完成時機語義。
 /// - 下行橋接：`.channel`（stdout）與 `.stdErr`（extended data）合流 yield 進 inbound 流，
-///   與引擎既有的合流行為一致；`channelInactive` 結束流、`errorCaught` 以錯誤結束流。
+///   與引擎既有的合流行為一致；`channelInactive` 結束流、`errorCaught` 以錯誤結束流——
+///   唯會話成形後的 `NIOSSHError` `tcpShutdown` 正規化為 clean finish（見 ``errorCaught(context:error:)``）。
 /// - 內部狀態只在單一 event loop 的 pipeline 回呼內讀寫、不跨界，無需同步。
 ///
 /// - Important: `@unchecked Sendable` 的成立前提＝單 event loop confinement：可變狀態
@@ -84,7 +85,7 @@ final class PTTSessionBridgeHandler: ChannelInboundHandler, @unchecked Sendable 
 	func channelRead(context: ChannelHandlerContext, data: NIOAny) {
 		let channelData = unwrapInboundIn(data)
 		// !!!: NIOSSH 下行恆為 byteBuffer（fileRegion 僅屬出站最佳化），此 guard 不可達、防禦性略過。
-		guard case .byteBuffer(let buffer) = channelData.data else { return }
+		guard case let .byteBuffer(buffer) = channelData.data else { return }
 		if channelData.type == .channel || channelData.type == .stdErr {
 			inboundContinuation.yield(Array(buffer.readableBytesView))
 		}
@@ -98,9 +99,19 @@ final class PTTSessionBridgeHandler: ChannelInboundHandler, @unchecked Sendable 
 	}
 
 	/// 讀寫錯誤：建立未完成則 fail ready，下行流以錯誤收尾並關閉 channel。
+	///
+	/// 唯一例外：**會話成形後**的 `NIOSSHError` `tcpShutdown` 正規化為 clean finish——
+	/// parent TCP 收線時 NIOSSH 對尚未關閉的 child 一律打此錯誤（顯式 `close()` 與對端
+	/// 斷線同一路徑），而 bbs-sshd 斷線本就不做 SSH 層 clean close，屬正常連線終止形態、
+	/// 不得讓引擎誤分類為故障（實連驗證：`close()` 後 inbound 曾以此錯誤結束）。
+	/// 會話未成形時不套用：連線建立失敗須以錯誤回報呼叫端。
 	func errorCaught(context: ChannelHandlerContext, error: any Error) {
-		failSetup(error)
-		inboundContinuation.finish(throwing: error)
+		failSetup(error) // 只在建立中把 phase 推向 failed、不會動 ready——其後以 phase 判會話是否已成形
+		if phase == .ready, let sshError = error as? NIOSSHError, sshError.type == .tcpShutdown {
+			inboundContinuation.finish()
+		} else {
+			inboundContinuation.finish(throwing: error)
+		}
 		context.close(promise: nil)
 	}
 
