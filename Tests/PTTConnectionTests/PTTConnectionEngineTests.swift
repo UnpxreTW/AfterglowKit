@@ -195,8 +195,12 @@ private final class PTTConnectionEngineTests {
 		let engine: PTTConnectionEngine = Self.makeEngine(clock: clock, connector: connector)
 		let connection = try await engine.connect(role: .foreground(deviceIdentifier: "iphone"))
 		connector.transports[0].endStream() // 建立後立即被斷（早夭窗內）
+		// 收斂條件須含 slot 釋放：state 在 shutdown 內先落定、被拒記錄晚於它（handleClose 於引擎
+		// actor 內先釋放 slot 再記被拒）——只等 state 會與被拒記錄競態、backoff 斷言偶發失效。
 		let dropped = await advanceUntil(clock, step: .milliseconds(100)) {
-			await connection.state == .closed(.serverClose)
+			let closed = await connection.state == .closed(.serverClose)
+			let slotReleased = await engine.activeConnectionCount == 0
+			return closed && slotReleased
 		}
 		#expect(dropped)
 		let retryTask = Task { try await engine.connect(role: .foreground(deviceIdentifier: "iphone")) }
