@@ -34,6 +34,9 @@ public enum PTTConnectionError: Error, Equatable {
 	/// 對已關閉的連線送資料。
 	case connectionClosed
 
+	/// server 出示的 host key 不在 pinned 組（安全訊號：可能 MITM 或站方換鑰）、握手已中止。
+	case hostKeyMismatch
+
 	/// slot 滿額且無可讓位的連線（短連線請求不搶佔前景）。
 	case slotsExhausted
 }
