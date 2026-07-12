@@ -21,7 +21,7 @@ enum GeneratorError: Error, CustomStringConvertible {
 	/// 原始表 SHA-256 與 pin 不符：疑上游 drift 或下載截斷，一律 hard-fail 不寫檔。
 	case shaMismatch(expected: String, actual: String)
 
-	/// b2u 文字表解析失敗（非 UTF-8、或行格式不符 `<big5> <unicode>`）。
+	/// b2u / u2b 文字表解析失敗（非 UTF-8、或行格式不符 `<big5> <unicode>`）。
 	case parse(String)
 
 	/// 筆數斷言失敗：指明欄位與期望／實際筆數（滿格前提被打破的訊號）。
@@ -49,32 +49,14 @@ enum GeneratorError: Error, CustomStringConvertible {
 
 // MARK: - Generator
 
-/// UAO 解碼表產生器：取得 b2u 原始表 → 滿格斷言 → 分 zone varint pack → 寫 `UAOTable.swift`。
+/// UAO 對照表產生器進入點：取得 b2u／u2b 原始表 → 交給 ``DecodeTableGenerator`` /
+/// ``EncodeTableGenerator`` 各自斷言與 pack → 交給 ``UAOTableRenderer`` 組檔 → 寫 `UAOTable.swift`。
 ///
 /// 原始表不 vendored：優先讀本機 override 檔、否則自 MozTW 官方 repo 的
 /// **commit-pinned** raw URL 下載；無論來源，SHA-256 不符即 hard-fail。
-/// 寫檔前以「滿格 × 全表 round-trip × spot-check」三道閘自驗（透過真實
-/// ``UAODecodeTable`` loader 解回即將寫入的 bytes）。consumer build 永不連網、永不重生。
+/// 兩個方向寫檔前皆以真實 runtime loader（``UAODecodeTable`` / ``UAOEncodeTable``）解回
+/// packed bytes 做全表 round-trip 自驗。consumer build 永不連網、永不重生。
 enum Generator {
-
-	/// 六個 zone：lead 範圍 + 內容描述；滿格前提下筆數 = lead 數 × 157。
-	struct Zone {
-
-		/// 滿格前提下本 zone 筆數：lead 數 × 每 lead 157 trail。
-		var expectedCount: Int { (Int(leadHigh) - Int(leadLow) + 1) * UAODecodeTable.trailsPerLead }
-
-		/// zone 常數識別字，原樣寫入產生檔作 StaticString 名稱。
-		let name: String
-
-		/// zone 起始 lead byte（含）。
-		let leadLow: UInt8
-
-		/// zone 結束 lead byte（含）。
-		let leadHigh: UInt8
-
-		/// 寫入產生檔的區段中文說明（描述該 lead 範圍收錄的內容）。
-		let comment: String
-	}
 
 	/// 套件根目錄：本檔在 `<root>/Sources/afterglowdata/Generator.swift`，往上三層。
 	static let packageRoot = URL(fileURLWithPath: #filePath)
@@ -82,7 +64,7 @@ enum Generator {
 		.deletingLastPathComponent()
 		.deletingLastPathComponent()
 
-	/// moztw/www.moztw.org 的固定 commit；升級表版本時更新此 pin 與 SHA。
+	/// moztw/www.moztw.org 的固定 commit；升級表版本時更新此 pin 與兩個 SHA。
 	static let sourcePin = "bbb049deaeeb256a4d781162f71665c2e244701e"
 
 	/// b2u 原始表 SHA-256（drift / 截斷偵測；與來源無關、一律驗）。
@@ -91,119 +73,121 @@ enum Generator {
 	/// b2u 完整筆數（126 lead × 157 trail 滿格）；解析結果與 zone 加總不符即 hard-fail。
 	static let expectedB2UCount = 19_782
 
-	/// 六個 zone 的 lead 分區定義；依 lead 遞增排列、串接即涵蓋完整 Big5 pointer 空間。
-	static let zones: [Zone] = [
-		Zone(
-			name: "zoneUserDefined",
-			leadLow: 0x81,
-			leadHigh: 0xA0,
-			comment: "UAO 使用者定義區（標準 Big5 未收的罕用漢字為主、近乎 Unicode 遞增）"
-		),
-		Zone(
-			name: "zoneSymbols",
-			leadLow: 0xA1,
-			leadHigh: 0xA3,
-			comment: "標準 Big5 符號區"
-		),
-		Zone(
-			name: "zoneHanziL1",
-			leadLow: 0xA4,
-			leadHigh: 0xC6,
-			comment: "標準 Big5 常用字 Level 1"
-		),
-		Zone(
-			name: "zoneKanaCyrillic",
-			leadLow: 0xC7,
-			leadHigh: 0xC8,
-			comment: "倚天／UAO 假名・西里爾區"
-		),
-		Zone(
-			name: "zoneHanziL2",
-			leadLow: 0xC9,
-			leadHigh: 0xF9,
-			comment: "標準 Big5 次常用字 Level 2"
-		),
-		Zone(
-			name: "zoneExtension",
-			leadLow: 0xFA,
-			leadHigh: 0xFE,
-			comment: "UAO 延伸區（倚天線繪等）"
-		)
-	]
+	/// u2b 原始表 SHA-256（drift / 截斷偵測；與來源無關、一律驗）。
+	static let expectedU2BSHA = "2edfd7b1d758cec2b7ba0d47cfca08ef8a70c14da8ae53bffa282e6c397299cf"
 
-	/// pointer 次序的合法 trail 序列：0x40–0x7E、再 0xA1–0xFE。
-	static let trailSequence: [UInt8] = Array(0x40 ... 0x7E) + Array(0xA1 ... 0xFE)
+	/// u2b 完整筆數（含 `0xFFFD` 無對應哨兵列）；moztw 檔案原生行數。
+	static let expectedU2BCount = 65_407
 
-	/// 本機 override（存在就用、不下載；仍驗 SHA）。
+	/// u2b 中 `0xFFFD`（無對應）哨兵筆數：這部分不落 encode 表、查無即語意等價於 `nil`。
+	static let expectedU2BSentinelCount = 39_491
+
+	/// u2b 中「有對應」筆數＝ canonical（可逆）＋ best-fit（近似）；encode 表只收這部分。
+	static let expectedEncodeCount = 25_916
+
+	/// 有對應筆數中，可逆（canonical：經 b2u 回查等於原字）的筆數。
+	static let expectedCanonicalCount = 19_316
+
+	/// 有對應筆數中，不可逆（best-fit：近似替代，回查得到不同字或非合法 Big5 pointer）的筆數。
+	static let expectedBestFitCount = 6600
+
+	/// b2u 本機 override（存在就用、不下載；仍驗 SHA）。
 	static var localB2UPath: String { packageRoot.appendingPathComponent("uao250-b2u.txt").path }
+
+	/// u2b 本機 override（存在就用、不下載；仍驗 SHA）。
+	static var localU2BPath: String { packageRoot.appendingPathComponent("uao250-u2b.txt").path }
 
 	/// 產出檔路徑：寫入 PTTBig5Codec 的 Generated 目錄，consumer build 直接編譯、永不重生。
 	static var outPath: String { packageRoot.appendingPathComponent("Sources/PTTBig5Codec/Generated/UAOTable.swift").path }
 
-	/// MozTW 官方 repo 的 commit-pinned raw URL；pin 固定使下載內容可與 SHA-256 對驗。
+	/// MozTW 官方 repo 的 commit-pinned b2u raw URL；pin 固定使下載內容可與 SHA-256 對驗。
 	static var sourceURL: URL {
 		URL(
 			string: "https://raw.githubusercontent.com/moztw/www.moztw.org/\(sourcePin)/docs/big5/table/uao250-b2u.txt"
 		)!
 	}
 
-	/// 產生器主流程：載入來源 → 驗 SHA → 解析 → 滿格展開 → varint pack → 自驗 → 寫 `UAOTable.swift`。
+	/// MozTW 官方 repo 的 commit-pinned u2b raw URL；同一 pin、不同檔名。
+	static var sourceURLU2B: URL {
+		URL(
+			string: "https://raw.githubusercontent.com/moztw/www.moztw.org/\(sourcePin)/docs/big5/table/uao250-u2b.txt"
+		)!
+	}
+
+	/// 產生器主流程：b2u → decode 斷言與 pack、u2b → encode 斷言與 pack、兩者交給 renderer 組檔寫入。
 	static func run() throws {
-		let (data, origin) = try loadSource()
-		try verifySHA(data)
+		let (data, origin) = try loadFile(localPath: localB2UPath, remoteURL: sourceURL)
+		try verifySHA(data, expected: expectedB2USHA)
 		guard let text = String(bytes: data, encoding: .utf8) else {
 			throw GeneratorError.parse("b2u 原始表非 UTF-8")
 		}
-		let b2u = try parseB2U(text)
-		try expect("b2uCount", b2u.count, expectedB2UCount)
-		// 滿格斷言 + 依 pointer 序展開各 zone 的 value 序列。
-		let zoneValues = try denseZoneValues(b2u: b2u)
-		let packed = zoneValues.map { encodeVarintZone($0) }
-		try validate(packedZones: packed, b2u: b2u)
-		let content = render(packedZones: packed)
+		let b2uRows = try parseTable(text, label: "b2u")
+		try expect("b2uCount", b2uRows.count, expectedB2UCount)
+		let b2uMap: [UInt16: UInt16] = .init(uniqueKeysWithValues: b2uRows.map { ($0.big5, $0.unicode) })
+		let decoded = try DecodeTableGenerator.build(b2u: b2uMap)
+
+		let (u2bData, u2bOrigin) = try loadFile(localPath: localU2BPath, remoteURL: sourceURLU2B)
+		try verifySHA(u2bData, expected: expectedU2BSHA)
+		guard let u2bText = String(bytes: u2bData, encoding: .utf8) else {
+			throw GeneratorError.parse("u2b 原始表非 UTF-8")
+		}
+		let u2bRows = try parseTable(u2bText, label: "u2b")
+		let encoded = try EncodeTableGenerator.build(u2b: u2bRows, b2u: b2uMap)
+
+		// swiftformat:disable:next redundantType — render() 回傳 String，非 UAOTableRenderer 自身；
+		// propertyTypes 規則會誤把 static factory 推成宿主型別（見 swift 守則已知坑）。
+		let content: String = UAOTableRenderer.render(decoded: decoded, encoded: encoded)
 		try content.write(toFile: outPath, atomically: true, encoding: .utf8)
 		print("✅ 已寫入 \(outPath)")
-		print("   來源：\(origin)（SHA-256 驗證通過）")
-		let sizes = zip(zones, packed).map { "\($0.name) \($0.expectedCount) 筆/\($1.count)B" }
+		print("   b2u 來源：\(origin)（SHA-256 驗證通過）")
+		print("   u2b 來源：\(u2bOrigin)（SHA-256 驗證通過）")
+		let sizes = zip(DecodeTableGenerator.zones, decoded.packedZones)
+			.map { "\($0.name) \($0.expectedCount) 筆/\($1.count)B" }
 		print("   decode \(expectedB2UCount)（完整 b2u、六 zone varint）：\(sizes.joined(separator: "、"))")
+		print(
+			"   encode \(encoded.keys.count)（u2b canonical \(expectedCanonicalCount) + best-fit \(expectedBestFitCount)）：" +
+				"keys \(encoded.packedKeys.count)B + values \(encoded.packedValues.count)B"
+		)
 		print("   滿格、全表 round-trip 與 spot-check 通過。")
 	}
 
 	/// 取得原始表 bytes 與來源描述：本機 override 存在即用（不下載）、否則自 pinned URL 下載；皆失敗即 throw。
-	static func loadSource() throws -> (Data, String) {
-		if FileManager.default.fileExists(atPath: localB2UPath) {
-			return try (Data(contentsOf: URL(fileURLWithPath: localB2UPath)), "本機 override \(localB2UPath)")
+	/// b2u／u2b 共用同一套「本機優先、否則下載」邏輯，差別只在路徑與 URL。
+	static func loadFile(localPath: String, remoteURL: URL) throws -> (Data, String) {
+		if FileManager.default.fileExists(atPath: localPath) {
+			return try (Data(contentsOf: URL(fileURLWithPath: localPath)), "本機 override \(localPath)")
 		}
 		do {
-			return try (Data(contentsOf: sourceURL), sourceURL.absoluteString)
+			return try (Data(contentsOf: remoteURL), remoteURL.absoluteString)
 		} catch {
 			throw GeneratorError.sourceUnavailable(
-				"無本機 override（\(localB2UPath)）且下載失敗：\(error)。可手動下載後放至 override 路徑再重跑。"
+				"無本機 override（\(localPath)）且下載失敗：\(error)。可手動下載後放至 override 路徑再重跑。"
 			)
 		}
 	}
 
-	/// 驗原始表 SHA-256 與 ``expectedB2USHA`` 相符；與來源無關一律驗，防 drift 與截斷。
-	static func verifySHA(_ data: Data) throws {
+	/// 驗原始表 SHA-256 與期望值相符；與來源無關一律驗，防 drift 與截斷。
+	static func verifySHA(_ data: Data, expected: String) throws {
 		let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-		guard actual == expectedB2USHA else {
-			throw GeneratorError.shaMismatch(expected: expectedB2USHA, actual: actual)
+		guard actual == expected else {
+			throw GeneratorError.shaMismatch(expected: expected, actual: actual)
 		}
 	}
 
-	/// 解析 b2u（CRLF）：`b2u[big5] = unicode`。
-	static func parseB2U(_ text: String) throws -> [UInt16: UInt16] {
-		var map: [UInt16: UInt16] = .init(minimumCapacity: 20_000)
+	/// 解析 b2u／u2b 共用的兩欄格式（CRLF）：`<big5-or-0xFFFD> <unicode>`。
+	/// 保留檔案原序回傳（u2b 依 Unicode 遞增排列、encode 表的二分搜尋前提靠此序）。
+	static func parseTable(_ text: String, label: String) throws -> [(big5: UInt16, unicode: UInt16)] {
+		var rows: [(big5: UInt16, unicode: UInt16)] = []
 		// 以 Character.isNewline 切行：CRLF 在 Swift 為單一 grapheme，split(separator: "\n") 切不開。
 		for line in text.split(whereSeparator: { $0.isNewline }) {
 			if line.hasPrefix("#") { continue }
 			let tokens = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
 			guard tokens.count == 2, let big5 = parseHex(tokens[0]), let uni = parseHex(tokens[1]) else {
-				throw GeneratorError.parse("b2u 行：\(line)")
+				throw GeneratorError.parse("\(label) 行：\(line)")
 			}
-			map[big5] = uni
+			rows.append((big5: big5, unicode: uni))
 		}
-		return map
+		return rows
 	}
 
 	/// `0x` 前綴的十六進位 token → UInt16（Swift radix 解析不吃前綴、需先剝）。
@@ -213,33 +197,10 @@ enum Generator {
 		return UInt16(digits, radix: 16)
 	}
 
-	/// value-only 密集表示的前提：126 lead × 157 trail 滿格。任一格缺 → hard-fail
-	/// （上游若出洞，此表示法不再成立、需回退 (key, value) pair 方案）。
-	static func denseZoneValues(b2u: [UInt16: UInt16]) throws -> [[UInt16]] {
-		var result: [[UInt16]] = []
-		for zone in zones {
-			var values: [UInt16] = []
-			values.reserveCapacity(zone.expectedCount)
-			for lead in zone.leadLow ... zone.leadHigh {
-				for trail in trailSequence {
-					let key = (UInt16(lead) << 8) | UInt16(trail)
-					guard let uni = b2u[key] else {
-						throw GeneratorError.validation("滿格斷言失敗：\(hex(key)) 無對應（value-only 密集表示前提不成立）")
-					}
-					guard uni != 0 else {
-						throw GeneratorError.validation("\(hex(key)) 對應 U+0000（非法 value）")
-					}
-					values.append(uni)
-				}
-			}
-			try expect("\(zone.name) 筆數", values.count, zone.expectedCount)
-			result.append(values)
-		}
-		return result
-	}
-
-	/// 將 zone 的 value 序列 pack 成 base64 varint 串：首值 LEB128、後續 zigzag-LEB128 差分（近乎遞增的表可大幅縮小）。
-	static func encodeVarintZone(_ values: [UInt16]) -> String {
+	/// 將遞增 / 近乎遞增的 `UInt16` 序列 pack 成 base64 varint 串：首值 LEB128、後續 zigzag-LEB128 差分。
+	/// decode 的六 zone value 陣列與 encode 的 key／value 陣列共用同一套 pack 邏輯
+	/// （runtime 端對應的還原邏輯見 `PTTBig5Codec.VarintDeltaCodec`）。
+	static func packVarint(_ values: [UInt16]) -> String {
 		var bytes: [UInt8] = []
 		bytes.reserveCapacity(values.count * 2)
 		var previous: Int32 = 0
@@ -265,43 +226,6 @@ enum Generator {
 		return Data(bytes).base64EncodedString()
 	}
 
-	/// 寫檔前自驗：以真實 ``UAODecodeTable`` loader 解回 packed bytes、全表 19,782 筆 round-trip、
-	/// spot-check 含 canary 與非法 key 檢查。
-	static func validate(packedZones: [String], b2u: [UInt16: UInt16]) throws {
-		guard let table = UAODecodeTable(base64Zones: packedZones, expectedCount: expectedB2UCount) else {
-			throw GeneratorError.validation("zone blob 無法 round-trip 解析")
-		}
-		// 全表 round-trip：19,782 筆逐一比對（涵蓋滿格、排序、varint 正確性）。
-		for (key, expected) in b2u {
-			guard table.lookup(key) == expected else {
-				let gotText = table.lookup(key).map { hex($0) } ?? "nil"
-				throw GeneratorError.validation("round-trip \(hex(key))：\(gotText) ≠ \(hex(expected))")
-			}
-		}
-		// spot-check（含 canary：0xC6E7 誤觸 ゃ ＝ 載到舊/錯表）。
-		try checkLookup(table, 0xC6E7, 0x3041, "ぁ U+3041")
-		if table.lookup(0xC6E7) == 0x3083 {
-			throw GeneratorError.validation("canary：0xC6E7 解出 ゃ(U+3083)、應為 ぁ(U+3041) — 載到舊/錯表")
-		}
-		try checkLookup(table, 0xF9FA, 0x256D, "╭ U+256D")
-		try checkLookup(table, 0xF9DE, 0x2566, "╦ U+2566")
-		try checkLookup(table, 0xA140, 0x3000, "全形空格 U+3000")
-		try checkLookup(table, 0xB35C, 0x8A31, "許 U+8A31")
-		// 非法 key 必回 nil。
-		for bad: UInt16 in [0x0041, 0x8039, 0xA17F, 0xFF40] where table.lookup(bad) != nil {
-			throw GeneratorError.validation("非法 key \(hex(bad)) 應回 nil")
-		}
-	}
-
-	/// spot-check 單筆：lookup 結果須等於期望 Unicode，否則 throw `.validation`。
-	static func checkLookup(_ table: UAODecodeTable, _ key: UInt16, _ expected: UInt16, _ name: String) throws {
-		let got = table.lookup(key)
-		guard got == expected else {
-			let gotText = got.map { hex($0) } ?? "nil"
-			throw GeneratorError.validation("spot-check \(name)：lookup(\(hex(key))) = \(gotText)、應為 \(hex(expected))")
-		}
-	}
-
 	/// 筆數斷言：actual ≠ expected 即 throw `.countMismatch`（滿格與解析完整性的統一檢查點）。
 	static func expect(_ field: String, _ actual: Int, _ expected: Int) throws {
 		guard actual == expected else {
@@ -312,58 +236,5 @@ enum Generator {
 	/// UInt16 → `0xXXXX` 大寫十六進位字串（錯誤訊息呈現用）。
 	static func hex(_ value: UInt16) -> String {
 		"0x" + String(format: "%04X", value)
-	}
-
-	/// 組出 `UAOTable.swift` 全文：檔頭、來源與表示法註記、六 zone StaticString 常數、zones 聚合 property。
-	static func render(packedZones: [String]) -> String {
-		var constants = ""
-		for (zone, packed) in zip(zones, packedZones) {
-			let low: String = .init(zone.leadLow, radix: 16, uppercase: true)
-			let high: String = .init(zone.leadHigh, radix: 16, uppercase: true)
-			constants += """
-
-				\t/// lead 0x\(low)–0x\(high)、\(zone.expectedCount) 筆——\(zone.comment)。
-				\tstatic let \(zone.name): StaticString = "\(packed)"
-
-				"""
-		}
-		return """
-			//
-			//  PTTBig5Codec
-			//
-			//  Copyright © 2026 Unpxre (GitHub: UnpxreTW)
-			//  Licensed under the Apache License 2.0. See LICENSE for details.
-			//
-			//  SPDX-License-Identifier: Apache-2.0
-
-			//  GENERATED BY `swift run afterglowdata generate` — DO NOT EDIT.
-			//  來源：uao250 b2u（完整 \(expectedB2UCount) 筆、126 lead × 157 trail 滿格）、
-			//  取自 moztw/www.moztw.org@\(sourcePin.prefix(12))、SHA-256 驗證見產生器常數。
-			//  表示法：value-only 密集陣列、分六 zone 之 base64 varint 串
-			//  （首值 LEB128、後續 zigzag-LEB128 差分；key 由 Big5 pointer 公式推導、不儲存）。
-
-			// swiftformat:disable all
-			// 原因：本檔為產生器機械產出，格式規則對其無指引意義。
-
-			enum UAOTable {
-
-			\t/// 表來源識別（uao250 ＝ UAO 2.50）。
-			\tstatic let source = "uao250"
-
-			\t/// 解碼表總筆數（126 lead × 157 trail 滿格）。
-			\tstatic let decodeCount = \(expectedB2UCount)
-
-			\t// swiftlint:disable line_length
-			\t// 原因：blob 行長由資料量決定。
-			\(constants)
-			\t// swiftlint:enable line_length
-
-			\t/// 依 lead 序串接＝完整 pointer 空間（餵 ``UAODecodeTable``）。
-			\tstatic var zones: [StaticString] {
-			\t\t[zoneUserDefined, zoneSymbols, zoneHanziL1, zoneKanaCyrillic, zoneHanziL2, zoneExtension]
-			\t}
-			}
-
-			"""
 	}
 }
