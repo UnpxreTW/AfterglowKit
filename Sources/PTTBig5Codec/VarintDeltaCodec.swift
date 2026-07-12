@@ -1,1 +1,49 @@
-Ly8KLy8gIFBUVEJpZzVDb2RlYwovLwovLyAgQ29weXJpZ2h0IMKpIDIwMjYgVW5weHJlIChHaXRIdWI6IFVucHhyZVRXKQovLyAgTGljZW5zZWQgdW5kZXIgdGhlIEFwYWNoZSBMaWNlbnNlIDIuMC4gU2VlIExJQ0VOU0UgZm9yIGRldGFpbHMuCi8vCi8vICBTUERYLUxpY2Vuc2UtSWRlbnRpZmllcjogQXBhY2hlLTIuMAoKaW1wb3J0IEZvdW5kYXRpb24KCi8vLyDlhbHnlKjnmoQgdmFyaW50IOW3ruWIhuW6j+WIl+ino+eivO+8mummluWAvCBMRUIxMjgg5Y6f5YC844CB5b6M57qMIHppZ3phZy1MRUIxMjgg5beu5YiG6YKE5Y6f5oiQIGBbVUludDE2XWDjgIIKLy8vCi8vLyBgYFVBT0RlY29kZVRhYmxlYGDvvIjmu7/moLwgQmlnNSBwb2ludGVyIOW6j+WIl++8ieiIhyBgYFVBT0VuY29kZVRhYmxlYGDvvIjnqIDnlo8gVW5pY29kZSBrZXnvvI92YWx1ZQovLy8g5YWp5qKd5Lim6KGM5bqP5YiX77yJ5Zyo5YSy5a2Y5bGk6YO95piv44CM6L+R5LmO6YGe5aKe5oiW5Y2A5Z+f5bmz57ep44CN55qEIGBVSW50MTZgIOW6j+WIl++8jOWvq+WFpeerr+eUsSBgYWZ0ZXJnbG93ZGF0YWAKLy8vIOeUoueUn+WZqOWPpuihjCBwYWNr77yI6KaLIGBHZW5lcmF0b3IuZW5jb2RlVmFyaW50Wm9uZWDvvInvvIzmnKzlnovliKXlj6rosqDosqwgcnVudGltZSDnq6/pgoTljp/jgIHlhanogIXlhbHnlKjlkIzkuIDlpZfpgo/ovK/jgIIKZW51bSBWYXJpbnREZWx0YUNvZGVjIHsKCgkvLy8g6Kej5LiA5q61IHZhcmludCDlt67liIbluo/liJfvvJrpppblgLwgTEVCMTI4IOWOn+WAvOOAgeW+jOe6jCB6aWd6YWctTEVCMTI4IOW3ruWIhuOAggoJLy8vIOS7u+S9lei2iueVjO+8j+aIquaWtyDihpIgYGZhbHNlYO+8iOWRvOWPq+erryB0cmFwIOaIluWbniBuaWzvvInjgIIKCXN0YXRpYyBmdW5jIGRlY29kZShfIHJhdzogRGF0YSwgaW50byB2YWx1ZXM6IGlub3V0IFtVSW50MTZdKSAtPiBCb29sIHsKCQl2YXIgaW5kZXggPSByYXcuc3RhcnRJbmRleAoJCXZhciBwcmV2aW91czogSW50MzIgPSAwCgkJdmFyIGlzRmlyc3QgPSB0cnVlCgkJd2hpbGUgaW5kZXggPCByYXcuZW5kSW5kZXggewoJCQl2YXIgc2hpZnQ6IFVJbnQzMiA9IDAKCQkJdmFyIGFjY3VtdWxhdGVkOiBVSW50MzIgPSAwCgkJCXdoaWxlIHRydWUgewoJCQkJZ3VhcmQgaW5kZXggPCByYXcuZW5kSW5kZXgsIHNoaWZ0IDw9IDI4IGVsc2UgeyByZXR1cm4gZmFsc2UgfQoJCQkJbGV0IGJ5dGUgPSByYXdbaW5kZXhdCgkJCQlpbmRleCArPSAxCgkJCQlhY2N1bXVsYXRlZCB8PSBVSW50MzIoYnl0ZSAmIDB4N0YpIDw8IHNoaWZ0CgkJCQlpZiBieXRlICYgMHg4MCA9PSAwIHsgYnJlYWsgfQoJCQkJc2hpZnQgKz0gNwoJCQl9CgkJCWxldCB2YWx1ZTogSW50MzIKCQkJaWYgaXNGaXJzdCB7CgkJCQl2YWx1ZSA9IEludDMyKGJpdFBhdHRlcm46IGFjY3VtdWxhdGVkKQoJCQkJaXNGaXJzdCA9IGZhbHNlCgkJCX0gZWxzZSB7CgkJCQlsZXQgZGVsdGE6IEludDMyID0gLmluaXQoYml0UGF0dGVybjogKGFjY3VtdWxhdGVkID4+IDEpIF4gKDAgJi0gKGFjY3VtdWxhdGVkICYgMSkpKSAvLyB6aWd6YWcg6YKE5Y6fCgkJCQl2YWx1ZSA9IHByZXZpb3VzICYrIGRlbHRhCgkJCX0KCQkJZ3VhcmQgdmFsdWUgPj0gMCwgdmFsdWUgPD0gMHhGRkZGIGVsc2UgeyByZXR1cm4gZmFsc2UgfQoJCQl2YWx1ZXMuYXBwZW5kKFVJbnQxNih2YWx1ZSkpCgkJCXByZXZpb3VzID0gdmFsdWUKCQl9CgkJcmV0dXJuIHRydWUKCX0KfQo=
+//
+//  PTTBig5Codec
+//
+//  Copyright © 2026 Unpxre (GitHub: UnpxreTW)
+//  Licensed under the Apache License 2.0. See LICENSE for details.
+//
+//  SPDX-License-Identifier: Apache-2.0
+
+import Foundation
+
+/// 共用的 varint 差分序列解碼：首值 LEB128 原值、後續 zigzag-LEB128 差分還原成 `[UInt16]`。
+///
+/// ``UAODecodeTable``（滿格 Big5 pointer 序列）與 ``UAOEncodeTable``（稀疏 Unicode key／value
+/// 兩條並行序列）在儲存層都是「近乎遞增或區域平緩」的 `UInt16` 序列，寫入端由 `afterglowdata`
+/// 產生器另行 pack（見 `Generator.encodeVarintZone`），本型別只負責 runtime 端還原、兩者共用同一套邏輯。
+enum VarintDeltaCodec {
+
+	/// 解一段 varint 差分序列：首值 LEB128 原值、後續 zigzag-LEB128 差分。
+	/// 任何越界／截斷 → `false`（呼叫端 trap 或回 nil）。
+	static func decode(_ raw: Data, into values: inout [UInt16]) -> Bool {
+		var index = raw.startIndex
+		var previous: Int32 = 0
+		var isFirst = true
+		while index < raw.endIndex {
+			var shift: UInt32 = 0
+			var accumulated: UInt32 = 0
+			while true {
+				guard index < raw.endIndex, shift <= 28 else { return false }
+				let byte = raw[index]
+				index += 1
+				accumulated |= UInt32(byte & 0x7F) << shift
+				if byte & 0x80 == 0 { break }
+				shift += 7
+			}
+			let value: Int32
+			if isFirst {
+				value = Int32(bitPattern: accumulated)
+				isFirst = false
+			} else {
+				let delta: Int32 = .init(bitPattern: (accumulated >> 1) ^ (0 &- (accumulated & 1))) // zigzag 還原
+				value = previous &+ delta
+			}
+			guard value >= 0, value <= 0xFFFF else { return false }
+			values.append(UInt16(value))
+			previous = value
+		}
+		return true
+	}
+}
