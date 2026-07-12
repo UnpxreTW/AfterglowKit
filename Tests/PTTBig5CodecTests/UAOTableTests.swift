@@ -63,4 +63,44 @@ private final class UAOTableTests {
 		#expect(UAO.decode.lookup(0xFE40) != nil) // 末 lead 首 trail
 		#expect(UAO.decode.lookup(0xFEFE) == 0x8288) // 最後一格（uao250 末行）
 	}
+
+	/// case 8（研究報告 §③、`decisions.md` D-015）：U+00DC（Ü）→ 0xA0BA，且經 decode 回查等於原字（canonical）。
+	@Test
+	private func `encode case 8 U+00DC`() {
+		#expect(UAO.encode(0x00DC) == 0xA0BA)
+		#expect(UAO.decode.lookup(0xA0BA) == 0x00DC)
+	}
+
+	/// strict 模式只回傳可逆（canonical）對應；U+00A6（¦）u2b 給的是不可逆 best-fit ASCII 近似（`0x7C20`＝`"| "`）。
+	@Test
+	private func `encode strict rejects best fit`() {
+		#expect(UAO.encode(0x00A6, mode: .strict) == nil)
+		#expect(UAO.encode(0x00A6, mode: .bestFit) == 0x7C20)
+		// best-fit 值本身不可逆：0x7C 不是合法 Big5 lead（decode 回查為 nil）。
+		#expect(UAO.decode.lookup(0x7C20) == nil)
+	}
+
+	/// 純哨兵（u2b 全表只有 `0xFFFD` 一列）→ 兩種模式皆回 nil。
+	@Test
+	private func `encode sentinel returns nil`() {
+		#expect(UAO.encode(0x0081) == nil)
+		#expect(UAO.encode(0x0081, mode: .bestFit) == nil)
+	}
+
+	/// encode 表筆數 = u2b 有對應筆數（canonical 19,316 + best-fit 6,600）。
+	@Test
+	private func `encode count`() {
+		#expect(UAO.encodeTable.keys.count == 25_916)
+		#expect(UAO.encodeTable.values.count == 25_916)
+		#expect(UAOTable.encodeCount == 25_916)
+	}
+
+	/// encode key 陣列必須嚴格遞增（``UAOEncodeTable.lookup`` 二分搜尋的前提）。
+	@Test
+	private func `encode keys strictly ascending`() {
+		let keys = UAO.encodeTable.keys
+		for index in 1 ..< keys.count {
+			#expect(keys[index] > keys[index - 1])
+		}
+	}
 }
