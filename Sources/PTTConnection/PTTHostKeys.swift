@@ -26,8 +26,10 @@ public enum PTTHostKeys {
 	/// （上游實作細節、非我們控制面），pin 整組避免依賴偏好序。
 	public static let pttcc: Set<NIOSSHPublicKey> = [
 		makeKey("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDqjN1kJZrgrY6skGqVGT/JHeoZRuTlnRO38IUKEzaW0"),
-		// swiftlint:disable:next line_length
-		makeKey("ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBF2BVrQ8abQ5CEeUEfUybHXFlaFkLwWBfiLN53KnTGyTpJbUCrpTTPHIr325IaKhed+Lx2POwrDwpga8USPBoqc="),
+		makeKey(
+			// swiftlint:disable:next line_length
+			"ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBF2BVrQ8abQ5CEeUEfUybHXFlaFkLwWBfiLN53KnTGyTpJbUCrpTTPHIr325IaKhed+Lx2POwrDwpga8USPBoqc="
+		)
 	]
 
 	/// 解析 OpenSSH 格式公鑰字面值；內建常數解析失敗屬程式員錯誤、直接斷言終止。

@@ -21,7 +21,53 @@ import NIOSSH
 /// 皆在 NIOSSH 內建提案內，逕用預設組、不需自訂演算法面。
 public struct NIOSSHPTTTransportConnector: PTTTransportConnector {
 
-	// MARK: Lifecycle
+	// MARK: Public
+
+	/// 對端點建立一條 SSH PTY 連線；PTY / shell 皆獲 server 確認才回傳。
+	///
+	/// 失敗一律丟錯（由引擎記入頻率閘）；握手層錯誤（如 host key 驗證被拒）
+	/// 優先於 child channel 的間接錯誤回報。
+	public func connect(to endpoint: PTTEndpoint) async throws -> any PTTTransport {
+		let errorRecorder: SSHConnectionErrorRecordingHandler = .init()
+		let bootstrap = makeBootstrap(
+			pinnedHostKeys: pinnedHostKeys,
+			username: endpoint.username,
+			errorRecorder: errorRecorder
+		)
+		let parentChannel = try await bootstrap.connect(host: endpoint.host, port: endpoint.port).get()
+		let (inbound, inboundContinuation) = AsyncThrowingStream.makeStream(of: [UInt8].self)
+		let sessionReadyPromise = parentChannel.eventLoop.makePromise(of: Void.self)
+		let pseudoTerminalRequest = SSHChannelRequestEvent.PseudoTerminalRequest(
+			wantReply: true,
+			term: "xterm",
+			terminalCharacterWidth: terminalColumnCount,
+			terminalRowHeight: terminalRowCount,
+			terminalPixelWidth: 0,
+			terminalPixelHeight: 0,
+			terminalModes: SSHTerminalModes([.ECHO: 1])
+		)
+		let childChannelFuture = makeChildChannelFuture(
+			parentChannel: parentChannel,
+			pseudoTerminalRequest: pseudoTerminalRequest,
+			sessionReadyPromise: sessionReadyPromise,
+			inboundContinuation: inboundContinuation
+		)
+		// 建立逾時保險：逾時只「關 parent channel」，讓 inactive / handlerRemoved
+		// 路徑收攤 ready promise（維持唯一完成者、避免雙完成競態）。
+		let setupTimeoutTask = parentChannel.eventLoop.scheduleTask(in: TimeAmount(sessionSetupTimeout)) {
+			parentChannel.close(promise: nil)
+		}
+		do {
+			let childChannel = try await childChannelFuture.get()
+			try await sessionReadyPromise.futureResult.get()
+			setupTimeoutTask.cancel()
+			return NIOSSHPTTTransport(parentChannel: parentChannel, childChannel: childChannel, inbound: inbound)
+		} catch {
+			setupTimeoutTask.cancel()
+			parentChannel.close(promise: nil)
+			throw errorRecorder.recordedError ?? error
+		}
+	}
 
 	/// 建立 connector。
 	///
@@ -44,25 +90,37 @@ public struct NIOSSHPTTTransportConnector: PTTTransportConnector {
 		self.sessionSetupTimeout = sessionSetupTimeout
 	}
 
-	// MARK: Public
+	// MARK: Private
 
-	/// 對端點建立一條 SSH PTY 連線；PTY / shell 皆獲 server 確認才回傳。
+	/// 信任的 host key 組。
+	private let pinnedHostKeys: Set<NIOSSHPublicKey>
+
+	/// PTY 窗口寬（字元數）。
+	private let terminalColumnCount: Int
+
+	/// PTY 窗口高（列數）。
+	private let terminalRowCount: Int
+
+	/// 會話成形總時限。
+	private let sessionSetupTimeout: Duration
+
+	/// 組出對 ``PTTEndpoint`` 建連用的 `ClientBootstrap`：channelInitializer 內就地建構
+	/// none-auth 與 pinned-host-key 兩個 delegate、掛上 `NIOSSHHandler` 與錯誤紀錄 handler。
 	///
-	/// 失敗一律丟錯（由引擎記入頻率閘）；握手層錯誤（如 host key 驗證被拒）
-	/// 優先於 child channel 的間接錯誤回報。
-	public func connect(to endpoint: PTTEndpoint) async throws -> any PTTTransport {
-		let pinnedHostKeys = pinnedHostKeys
-		let username = endpoint.username
-		let errorRecorder: SSHConnectionErrorRecordingHandler = .init()
-		let bootstrap = ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton)
+	/// - Note: `SSHClientConfiguration` 與兩個 delegate 皆非 Sendable，只能在
+	///   channelInitializer 閉包內就地建構、不可存為 connector 屬性或跨 await 持有。
+	private func makeBootstrap(
+		pinnedHostKeys: Set<NIOSSHPublicKey>,
+		username: String,
+		errorRecorder: SSHConnectionErrorRecordingHandler
+	) -> ClientBootstrap {
+		ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton)
 			.channelInitializer { channel in
-				// !!!: SSHClientConfiguration 與兩個 delegate 皆非 Sendable，
-				// 只能在此就地建構、不可存為 connector 屬性或跨 await 持有。
-				let configuration = SSHClientConfiguration(
+				let configuration: SSHClientConfiguration = .init(
 					userAuthDelegate: NoneAuthenticationDelegate(username: username),
 					serverAuthDelegate: PinnedHostKeysDelegate(pinnedHostKeys: pinnedHostKeys)
 				)
-				let handler = NIOSSHHandler(
+				let handler: NIOSSHHandler = .init(
 					role: .client(configuration),
 					allocator: channel.allocator,
 					inboundChildChannelInitializer: nil
@@ -73,26 +131,25 @@ public struct NIOSSHPTTTransportConnector: PTTTransportConnector {
 					try channel.pipeline.syncOperations.addHandlers([handler, errorRecorder])
 				}
 			}
-		let parentChannel = try await bootstrap.connect(host: endpoint.host, port: endpoint.port).get()
-		let (inbound, inboundContinuation) = AsyncThrowingStream.makeStream(of: [UInt8].self)
-		let sessionReadyPromise = parentChannel.eventLoop.makePromise(of: Void.self)
-		let pseudoTerminalRequest = SSHChannelRequestEvent.PseudoTerminalRequest(
-			wantReply: true,
-			term: "xterm",
-			terminalCharacterWidth: terminalColumnCount,
-			terminalRowHeight: terminalRowCount,
-			terminalPixelWidth: 0,
-			terminalPixelHeight: 0,
-			terminalModes: SSHTerminalModes([.ECHO: 1])
-		)
-		// NIOSSHHandler 顯式非 Sendable：取得與 createChannel 全程留在 parent 的
-		// event loop 上（flatSubmit + syncOperations）、不跨 Sendable 邊界。
-		// 橋接 handler 在 loop 上先建構、並為 ready promise 的唯一完成者：
-		// child channel 建立失敗（握手死亡、channel open 被拒）一律經 `abortSetup`
-		// 收攤——SSH child channel 與 parent 共用同一 event loop，`phase` 守衛
-		// 在單 loop 序列化下保證 promise 單次完成、不留懸置。
-		let childChannelFuture = parentChannel.eventLoop.flatSubmit {
-			let bridgeHandler = PTTSessionBridgeHandler(
+	}
+
+	/// 在 parent channel 的 event loop 上開 session child channel、送 PTY request，
+	/// 並把橋接 handler 掛上去。
+	///
+	/// - Note: `NIOSSHHandler` 顯式非 Sendable：取得與 createChannel 全程留在 parent 的
+	///   event loop 上（flatSubmit + syncOperations）、不跨 Sendable 邊界。
+	///   橋接 handler 在 loop 上先建構、並為 ready promise 的唯一完成者：
+	///   child channel 建立失敗（握手死亡、channel open 被拒）一律經 `abortSetup`
+	///   收攤——SSH child channel 與 parent 共用同一 event loop，`phase` 守衛
+	///   在單 loop 序列化下保證 promise 單次完成、不留懸置。
+	private func makeChildChannelFuture(
+		parentChannel: Channel,
+		pseudoTerminalRequest: SSHChannelRequestEvent.PseudoTerminalRequest,
+		sessionReadyPromise: EventLoopPromise<Void>,
+		inboundContinuation: AsyncThrowingStream<[UInt8], Error>.Continuation
+	) -> EventLoopFuture<Channel> {
+		parentChannel.eventLoop.flatSubmit {
+			let bridgeHandler: PTTSessionBridgeHandler = .init(
 				pseudoTerminalRequest: pseudoTerminalRequest,
 				sessionReadyPromise: sessionReadyPromise,
 				inboundContinuation: inboundContinuation
@@ -113,34 +170,6 @@ public struct NIOSSHPTTTransportConnector: PTTTransportConnector {
 			}
 			return childChannelPromise.futureResult
 		}
-		// 建立逾時保險：逾時只「關 parent channel」，讓 inactive / handlerRemoved
-		// 路徑收攤 ready promise（維持唯一完成者、避免雙完成競態）。
-		let setupTimeoutTask = parentChannel.eventLoop.scheduleTask(in: TimeAmount(sessionSetupTimeout)) {
-			parentChannel.close(promise: nil)
-		}
-		do {
-			let childChannel = try await childChannelFuture.get()
-			try await sessionReadyPromise.futureResult.get()
-			setupTimeoutTask.cancel()
-			return NIOSSHPTTTransport(parentChannel: parentChannel, childChannel: childChannel, inbound: inbound)
-		} catch {
-			setupTimeoutTask.cancel()
-			parentChannel.close(promise: nil)
-			throw errorRecorder.recordedError ?? error
-		}
 	}
 
-	// MARK: Private
-
-	/// 信任的 host key 組。
-	private let pinnedHostKeys: Set<NIOSSHPublicKey>
-
-	/// PTY 窗口寬（字元數）。
-	private let terminalColumnCount: Int
-
-	/// PTY 窗口高（列數）。
-	private let terminalRowCount: Int
-
-	/// 會話成形總時限。
-	private let sessionSetupTimeout: Duration
 }
