@@ -48,7 +48,7 @@ public struct UAODecodeTable: Sendable {
 		for zone in base64Zones {
 			guard
 				let raw = Data(base64Encoded: zone),
-				UAODecodeTable.decodeVarintZone(raw, into: &decoded)
+				VarintDeltaCodec.decode(raw, into: &decoded)
 			else { return nil }
 		}
 		guard decoded.count == expectedCount else { return nil }
@@ -73,7 +73,7 @@ public struct UAODecodeTable: Sendable {
 			let data = zone.withUTF8Buffer { Data($0) }
 			guard
 				let raw = Data(base64Encoded: data),
-				UAODecodeTable.decodeVarintZone(raw, into: &decoded)
+				VarintDeltaCodec.decode(raw, into: &decoded)
 			else {
 				fatalError("UAOTable zone blob 損毀 — 重跑：swift run afterglowdata generate")
 			}
@@ -98,37 +98,5 @@ public struct UAODecodeTable: Sendable {
 		default: return nil
 		}
 		return (Int(lead) - 0x81) * trailsPerLead + trailOffset
-	}
-
-	/// 解一個 zone 的 varint 串：首值 LEB128 原值、後續 zigzag-LEB128 差分。
-	/// 任何越界 / 截斷 → `false`（呼叫端 trap 或回 nil）。
-	static func decodeVarintZone(_ raw: Data, into values: inout [UInt16]) -> Bool {
-		var index = raw.startIndex
-		var previous: Int32 = 0
-		var isFirst = true
-		while index < raw.endIndex {
-			var shift: UInt32 = 0
-			var accumulated: UInt32 = 0
-			while true {
-				guard index < raw.endIndex, shift <= 28 else { return false }
-				let byte = raw[index]
-				index += 1
-				accumulated |= UInt32(byte & 0x7F) << shift
-				if byte & 0x80 == 0 { break }
-				shift += 7
-			}
-			let value: Int32
-			if isFirst {
-				value = Int32(bitPattern: accumulated)
-				isFirst = false
-			} else {
-				let delta: Int32 = .init(bitPattern: (accumulated >> 1) ^ (0 &- (accumulated & 1))) // zigzag 還原
-				value = previous &+ delta
-			}
-			guard value >= 0, value <= 0xFFFF else { return false }
-			values.append(UInt16(value))
-			previous = value
-		}
-		return true
 	}
 }

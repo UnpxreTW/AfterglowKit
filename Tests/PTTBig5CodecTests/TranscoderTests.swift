@@ -11,7 +11,8 @@ import Foundation
 import Testing
 
 /// ``StreamTranscoder`` 驗收：涵蓋 9 個轉碼邊界 case 中的 1–7、9
-/// （case 8 為 encode 方向，於支援編碼時另補），外加三份真實
+/// （case 8 為 encode 方向，屬 ``UAO/encode(_:mode:)`` 範疇、非串流轉碼器職責，
+/// 驗收見 `UAOTableTests.encode case 8 U+00DC`），外加三份真實
 /// 登入畫面 golden capture 整段過機。
 private final class TranscoderTests {
 
