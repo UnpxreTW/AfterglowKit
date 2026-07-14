@@ -11,6 +11,7 @@ let package = Package(
 	products: [
 		.library(name: "PTTBig5Codec", targets: ["PTTBig5Codec"]),
 		.library(name: "PTTConnection", targets: ["PTTConnection"]),
+		.library(name: "PTTTerminal", targets: ["PTTTerminal"]),
 		.executable(name: "afterglowdata", targets: ["afterglowdata"]),
 	],
 	dependencies: [
@@ -21,6 +22,8 @@ let package = Package(
 		// swift-crypto 僅測試用（in-process SSH server 的 host key 生成）；
 		// 本就是 swift-nio-ssh 的 transitive 依賴、exact pin 與既解析版本一致。
 		.package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.0"),
+		// 終端渲染引擎（D-003 拍板）：exact pin，VT100/xterm 狀態機與 delegate API 敏感、升版須人工重驗。
+		.package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.13.0"),
 	],
 	targets: [
 		// Big5-UAO codec：對照表 blob + loader + 串流轉碼器（零外部 dep、可孤立編譯）。
@@ -38,6 +41,17 @@ let package = Package(
 				.product(name: "NIOCore", package: "swift-nio"),
 				.product(name: "NIOPosix", package: "swift-nio"),
 				.product(name: "NIOSSH", package: "swift-nio-ssh"),
+			],
+			plugins: [
+				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
+			]
+		),
+		// 終端 headless grid 引擎：內部跑 SwiftTerm VT100/xterm 狀態機，對外只吐與渲染機制無關的
+		// PTTScreen 快照（cell 矩陣 + 游標）；不依賴 PTTBig5Codec / PTTConnection（上下游在本模組外組裝）。
+		.target(
+			name: "PTTTerminal",
+			dependencies: [
+				.product(name: "SwiftTerm", package: "SwiftTerm"),
 			],
 			plugins: [
 				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
@@ -66,6 +80,10 @@ let package = Package(
 				.product(name: "NIOEmbedded", package: "swift-nio"),
 				.product(name: "NIOSSH", package: "swift-nio-ssh"),
 			]
+		),
+		.testTarget(
+			name: "PTTTerminalTests",
+			dependencies: ["PTTTerminal"]
 		),
 	]
 )
