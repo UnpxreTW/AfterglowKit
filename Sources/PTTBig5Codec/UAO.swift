@@ -40,13 +40,3 @@ public enum UAO {
 		return raw
 	}
 }
-
-/// ``UAO/encode(_:mode:)`` 的可逆性門檻。
-public enum UAOEncodeMode: Sendable, Equatable {
-
-	/// 僅回傳可逆（round-trippable）對應：`UAO.decode.lookup(raw) == scalar`。
-	case strict
-
-	/// 額外允許不可逆的 best-fit 近似替代。
-	case bestFit
-}
