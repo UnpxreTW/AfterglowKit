@@ -15,8 +15,9 @@
 /// prompt 前後帶 0–1s / 0–5s 隨機延遲）。錨定尾端 ASCII `[Y/n]`——
 /// 中文前綴可能隨站方改版微調，`[Y/n]` 才是穩定錨。
 ///
-/// 錨定必須 DBCS-aware：`[` `Y` `/` `n` `]` 全落在 Big5 trail 範圍
-/// （0x40–0x7E），裸 byte 搜尋可能從某個雙位元組字的 trail 開始誤配——
+/// 錨定必須 DBCS-aware：`[` `Y` `n` `]` 落在 Big5 trail 範圍（0x40–0x7E），
+/// 裸 byte 搜尋可能從某個雙位元組字的 trail 開始誤配；`/`（0x2F）落在該範圍外，
+/// 若緊接在某 lead byte 之後反而必然判定為孤 lead 放棄、不影響配對安全性——
 /// 因此掃描器維護 lead/trail 配對與 escape 略過狀態，只在字元邊界比對。
 public struct DuplicateLoginPromptScanner: Sendable {
 
