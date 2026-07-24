@@ -26,13 +26,16 @@ private final class PTTSessionBridgeHandlerTests {
 		terminalModes: SSHTerminalModes([.ECHO: 1])
 	)
 
+	/// `makeChannel()` 回傳的各觀察點（結構化取代 4 元 tuple，避免 large_tuple 違規）。
+	private struct ChannelHarness {
+		let channel: EmbeddedChannel
+		let recorder: OutboundUserEventRecorder
+		let ready: EventLoopFuture<Void>
+		let inbound: AsyncThrowingStream<[UInt8], any Error>
+	}
+
 	/// 組一條掛好 recorder + 橋接 handler 的 EmbeddedChannel（回傳各觀察點）。
-	private static func makeChannel() throws -> (
-		channel: EmbeddedChannel,
-		recorder: OutboundUserEventRecorder,
-		ready: EventLoopFuture<Void>,
-		inbound: AsyncThrowingStream<[UInt8], any Error>
-	) {
+	private static func makeChannel() throws -> ChannelHarness {
 		let channel: EmbeddedChannel = .init()
 		let recorder: OutboundUserEventRecorder = .init()
 		let readyPromise = channel.eventLoop.makePromise(of: Void.self)
@@ -43,13 +46,16 @@ private final class PTTSessionBridgeHandlerTests {
 			inboundContinuation: continuation
 		)
 		try channel.pipeline.syncOperations.addHandlers([recorder, bridge])
-		return (channel, recorder, readyPromise.futureResult, inbound)
+		return ChannelHarness(channel: channel, recorder: recorder, ready: readyPromise.futureResult, inbound: inbound)
 	}
 
 	/// 活化後依序送 PTY、shell request，兩度確認後 ready。
 	@Test
 	private func `pty then shell then ready on confirmations`() throws {
-		let (channel, recorder, ready, _) = try Self.makeChannel()
+		let harness = try Self.makeChannel()
+		let channel = harness.channel
+		let recorder = harness.recorder
+		let ready = harness.ready
 		try channel.connect(to: SocketAddress(ipAddress: "127.0.0.1", port: 22)).wait()
 		let ptyRequest = recorder.events.first as? SSHChannelRequestEvent.PseudoTerminalRequest
 		#expect(ptyRequest == Self.pseudoTerminalRequest)
@@ -65,7 +71,9 @@ private final class PTTSessionBridgeHandlerTests {
 	/// 任一 request 遭 server 拒絕 → ready 以 channelRequestRejected 失敗並收線。
 	@Test
 	private func `channel failure event fails setup and closes channel`() throws {
-		let (channel, _, ready, _) = try Self.makeChannel()
+		let harness = try Self.makeChannel()
+		let channel = harness.channel
+		let ready = harness.ready
 		try channel.connect(to: SocketAddress(ipAddress: "127.0.0.1", port: 22)).wait()
 		channel.pipeline.fireUserInboundEventTriggered(ChannelFailureEvent())
 		#expect(throws: PTTSessionBridgeHandler.SetupFailure.channelRequestRejected) {
@@ -78,7 +86,10 @@ private final class PTTSessionBridgeHandlerTests {
 	/// stdout 與 stderr 位元組合流、原樣 yield 進下行流。
 	@Test
 	private func `channel and stderr data merge into inbound stream`() async throws {
-		let (channel, _, ready, inbound) = try Self.makeChannel()
+		let harness = try Self.makeChannel()
+		let channel = harness.channel
+		let ready = harness.ready
+		let inbound = harness.inbound
 		try await channel.connect(to: SocketAddress(ipAddress: "127.0.0.1", port: 22)).get()
 		channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
 		channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
@@ -96,7 +107,10 @@ private final class PTTSessionBridgeHandlerTests {
 	/// channel 終止 → 下行流自然結束（流結束 = 連線終止）。
 	@Test
 	private func `channel inactive finishes inbound stream`() async throws {
-		let (channel, _, ready, inbound) = try Self.makeChannel()
+		let harness = try Self.makeChannel()
+		let channel = harness.channel
+		let ready = harness.ready
+		let inbound = harness.inbound
 		try await channel.connect(to: SocketAddress(ipAddress: "127.0.0.1", port: 22)).get()
 		channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
 		channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
@@ -110,7 +124,10 @@ private final class PTTSessionBridgeHandlerTests {
 	@Test
 	private func `error caught finishes inbound stream throwing`() async throws {
 		struct PipelineFailure: Error {}
-		let (channel, _, ready, inbound) = try Self.makeChannel()
+		let harness = try Self.makeChannel()
+		let channel = harness.channel
+		let ready = harness.ready
+		let inbound = harness.inbound
 		try await channel.connect(to: SocketAddress(ipAddress: "127.0.0.1", port: 22)).get()
 		channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
 		channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
@@ -127,7 +144,9 @@ private final class PTTSessionBridgeHandlerTests {
 	/// 會話尚未成形即斷線 → ready 以 closedDuringSetup 失敗（含 connector 逾時強制收線路徑）。
 	@Test
 	private func `channel inactive during setup fails ready`() throws {
-		let (channel, _, ready, _) = try Self.makeChannel()
+		let harness = try Self.makeChannel()
+		let channel = harness.channel
+		let ready = harness.ready
 		try channel.connect(to: SocketAddress(ipAddress: "127.0.0.1", port: 22)).wait()
 		try channel.close().wait()
 		#expect(throws: PTTSessionBridgeHandler.SetupFailure.closedDuringSetup) {

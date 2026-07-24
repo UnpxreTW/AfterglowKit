@@ -69,7 +69,10 @@ let package = Package(
 			name: "PTTBig5CodecTests",
 			dependencies: ["PTTBig5Codec"],
 			// golden 輸入：真實登入畫面 raw byte 捕獲（StreamTranscoder 整段過機驗收）。
-			resources: [.copy("Captures")]
+			resources: [.copy("Captures")],
+			plugins: [
+				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
+			]
 		),
 		.testTarget(
 			name: "PTTConnectionTests",
@@ -79,11 +82,17 @@ let package = Package(
 				.product(name: "NIOCore", package: "swift-nio"),
 				.product(name: "NIOEmbedded", package: "swift-nio"),
 				.product(name: "NIOSSH", package: "swift-nio-ssh"),
+			],
+			plugins: [
+				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
 			]
 		),
 		.testTarget(
 			name: "PTTTerminalTests",
-			dependencies: ["PTTTerminal"]
+			dependencies: ["PTTTerminal"],
+			plugins: [
+				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
+			]
 		),
 	]
 )
