@@ -49,9 +49,11 @@ private final class PTTSessionBoardTests {
 		harness.yield(TestScreens.emptyBoard)
 		#expect(await harness.waitForCompletion())
 		try await task.value
+		// !!!: 中斷鍵那段寫成 `[PTTKey](repeating:count:)` 而不是 `repeatElement(.interrupt,…)`
+		// ——後者要靠 `+` 的鏈式推導回填元素型別，較舊的編譯器推不出來、直接編譯失敗。
 		let expected: [PTTKey] = PTTKey.mainMenuReset
 			+ [.text("qs"), .text("Test"), .enter]
-			+ repeatElement(.interrupt, count: 5)
+			+ [PTTKey](repeating: .interrupt, count: 5)
 			+ [.formFeed]
 		#expect(harness.sink.batches[0] == expected)
 		harness.finish()
