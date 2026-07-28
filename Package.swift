@@ -12,6 +12,7 @@ let package = Package(
 		.library(name: "PTTBig5Codec", targets: ["PTTBig5Codec"]),
 		.library(name: "PTTConnection", targets: ["PTTConnection"]),
 		.library(name: "PTTTerminal", targets: ["PTTTerminal"]),
+		.library(name: "PTTSession", targets: ["PTTSession"]),
 		.executable(name: "afterglowdata", targets: ["afterglowdata"]),
 	],
 	dependencies: [
@@ -57,6 +58,15 @@ let package = Package(
 				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
 			]
 		),
+		// 畫面狀態機：等畫面原語 + 目標畫面表 + 全域送鍵節流，操作層以 async 函數組合。
+		// 只依賴 PTTTerminal 的畫面快照值型別，不依賴 PTTConnection（送鍵與編碼由組裝層接線）。
+		.target(
+			name: "PTTSession",
+			dependencies: ["PTTTerminal"],
+			plugins: [
+				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
+			]
+		),
 		// dev-time 資料 / 表產生器。
 		.executableTarget(
 			name: "afterglowdata",
@@ -90,6 +100,13 @@ let package = Package(
 		.testTarget(
 			name: "PTTTerminalTests",
 			dependencies: ["PTTTerminal"],
+			plugins: [
+				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
+			]
+		),
+		.testTarget(
+			name: "PTTSessionTests",
+			dependencies: ["PTTSession", "PTTTerminal"],
 			plugins: [
 				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
 			]
