@@ -34,4 +34,10 @@ public enum PTTSessionError: Error, Equatable {
 
 	/// 連續重試後仍無法從清單畫面判讀出最新編號。
 	case indexParseFailed(String)
+
+	/// 連續重試後仍無法從清單畫面判讀出任何一列文章。
+	case listingParseFailed(String)
+
+	/// 要求的編號區間不成立（起點小於 1，或起點大於終點）。
+	case invalidIndexRange
 }
