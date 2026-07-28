@@ -37,4 +37,34 @@ public enum PTTScreenText {
 	public static func flattened(_ screen: PTTScreen) -> String {
 		lines(of: screen).joined(separator: "\n")
 	}
+
+	/// 取某一列指定**欄區間**的文字（延續格略過、不另補空白）。
+	///
+	/// !!!: 欄不等於字元。站方畫面是定寬欄位排版，全形字佔兩欄卻只有一個字元——先攤成
+	/// 字串再用字元位置切欄，遇到全形字就會整排往前錯一格（推文數欄的「爆」是最常見的
+	/// 觸發點）。有格子矩陣就該按格子走，這是本函式存在的唯一理由。
+	///
+	/// 區間超出該列範圍的部分直接忽略，不視為錯誤——畫面殘影本來就可能短一截。
+	public static func text(of row: [PTTCell], in columns: Range<Int>) -> String {
+		var text: String = ""
+		text.reserveCapacity(columns.count)
+		for column in columns where row.indices.contains(column) && row[column].width > 0 {
+			text.append(row[column].character)
+		}
+		return text
+	}
+
+	// MARK: Internal
+
+	/// 去除前後空白（不引入 Foundation）。
+	static func trimmed(_ value: String) -> String {
+		var result: Substring = value[...]
+		while let first = result.first, first.isWhitespace {
+			result = result.dropFirst()
+		}
+		while let last = result.last, last.isWhitespace {
+			result = result.dropLast()
+		}
+		return String(result)
+	}
 }

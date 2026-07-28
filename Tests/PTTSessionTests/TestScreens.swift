@@ -63,7 +63,37 @@ enum TestScreens {
 	static let unrelated: [String] = ["連線中，請稍候"]
 
 	/// 看板文章清單（表頭 + 指定編號區間的文章列 + 底部功能列）。
+	///
+	/// 這個版本只保證**編號欄**落在正確的欄位上，其餘欄位是示意骨架——
+	/// 供只看編號的判讀（``ArticleIndexScanner``）使用。要逐欄位斷言請用
+	/// ``articleListing(from:through:)`` 或 ``articleRow(index:cursor:mark:pushCount:date:author:kind:title:)``。
 	static func boardListing(from lower: Int, through upper: Int) -> [String] {
 		boardHeader + (lower ... upper).map { "  \($0) + 7/23 alice      □ 測試標題" } + boardFooter
+	}
+
+	/// 依站方欄位寬度組一列文章清單。
+	///
+	/// 欄位起點以**欄**計（非字元）：編號 0、狀態記號 8、推文數 9、日期 11、作者 17、
+	/// 類別記號 30、標題 33。`pushCount`、`date`、`kind` 須自行給滿欄寬（分別為 2、5、2 欄），
+	/// 因為它們可能是全形字——這裡不替呼叫端猜顯示寬度。
+	static func articleRow(
+		index: Int,
+		cursor: Bool = false,
+		mark: Character = " ",
+		pushCount: String = "  ",
+		date: String = " 7/23",
+		author: String = "alice",
+		kind: String = "□",
+		title: String = "測試標題"
+	) -> String {
+		var indexField: String = .init(repeating: " ", count: max(0, 7 - "\(index)".count)) + "\(index)"
+		if cursor { indexField = ">" + indexField.dropFirst() }
+		let authorField: String = author + String(repeating: " ", count: max(0, 13 - author.count))
+		return indexField + " " + String(mark) + pushCount + date + " " + authorField + kind + " " + title
+	}
+
+	/// 依站方欄位寬度組一整張清單畫面（表頭 + 指定編號區間 + 底部功能列）。
+	static func articleListing(from lower: Int, through upper: Int) -> [String] {
+		boardHeader + (lower ... upper).map { articleRow(index: $0) } + boardFooter
 	}
 }

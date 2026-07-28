@@ -46,6 +46,15 @@ public actor PTTSession {
 	/// 清單畫面判讀失敗時的重試次數（畫面競態是常態，重取一次多半就好了）。
 	public static let parseRetryLimit = 2
 
+	/// 單次清單讀取最多翻幾頁。
+	///
+	/// 純粹是防跑掉的上限：一頁約二十列，四十頁足以涵蓋任何合理的單次請求區間，
+	/// 而真正的收斂條件是「收到 `upperIndex`」或「清單不再往前」。
+	public static let maximumListingPages = 40
+
+	/// 清單畫面的翻頁鍵。
+	public static let listingPageDownKey = "N"
+
 	/// 帳號長度上限（站方截斷值）。
 	public static let maximumIdentifierLength = 12
 
@@ -67,8 +76,8 @@ public actor PTTSession {
 	/// 帳號與密碼一次送完、不等中間的提示畫面：站方接受預先輸入，中途分支
 	/// （錯誤嘗試記錄、暫存檔選單、任意鍵提示…）由全域攔截表自動處理。
 	public func logIn(userIdentifier: String, password: String) async throws {
-		let identifier: String = Self.trimmed(String(userIdentifier.prefix(Self.maximumIdentifierLength)))
-		let secret: String = Self.trimmed(String(password.prefix(Self.maximumPasswordLength)))
+		let identifier: String = PTTScreenText.trimmed(String(userIdentifier.prefix(Self.maximumIdentifierLength)))
+		let secret: String = PTTScreenText.trimmed(String(password.prefix(Self.maximumPasswordLength)))
 		guard !identifier.isEmpty, !secret.isEmpty else { throw PTTSessionError.emptyCredentials }
 		_ = try await send(
 			[.text(identifier), .enter, .text(secret), .enter],
@@ -94,6 +103,62 @@ public actor PTTSession {
 			if let index = ArticleIndexScanner.newestIndex(in: screen) { return index }
 		}
 		throw PTTSessionError.indexParseFailed(board)
+	}
+
+	/// 讀取指定看板某一段編號區間的文章清單。
+	///
+	/// 做法是進板後跳到 `lowerIndex`，逐頁往下翻、把每頁認得出來的列收進來，直到收到
+	/// `upperIndex`、清單不再往前、或翻頁次數用盡為止。回傳依編號遞增排序。
+	///
+	/// 區間內沒有任何文章時回空陣列——「查無」是正常結果、不是錯誤。看板本身沒有文章時
+	/// 同樣回空陣列（與 ``newestIndex(ofBoard:)`` 回 `0` 是同一張畫面）。
+	///
+	/// !!!: 不照上游用「游標所在列」當解析起點。上游得先往回跳一大段再跳回來，把目標編號
+	/// 頂到游標列，然後只解析游標以下——那是為了在沒有編號過濾的前提下確保拿到的是想要的
+	/// 那一段。我們每一列都有編號、直接按區間過濾就好，省掉一次來回跳轉，也不必依賴
+	/// 「游標一定看得到」這個在畫面殘影下不見得成立的前提。
+	public func articles(
+		inBoard board: String,
+		from lowerIndex: Int,
+		through upperIndex: Int
+	) async throws -> [PTTArticleSummary] {
+		guard lowerIndex >= 1, lowerIndex <= upperIndex else { throw PTTSessionError.invalidIndexRange }
+		try await goToBoard(board)
+		var collected: [Int: PTTArticleSummary] = [:]
+		// !!!: 「這一頁有沒有往前」要看**所有**判讀出來的編號，不能只看已收進區間的那些。
+		// 只比對 `collected` 的話，一頁全落在區間外時每輪都會判成「有進展」，畫面卡住也照翻到上限。
+		var seen: Set<Int> = []
+		var keys: [PTTKey] = [.text(String(lowerIndex)), .enter]
+		var failures = 0
+		for _ in 0 ..< Self.maximumListingPages {
+			let target: PTTScreenTarget = try await send(
+				keys,
+				awaiting: [PTTTargetTable.emptyBoard, PTTTargetTable.inBoard],
+				timeout: Self.standardTimeout
+			)
+			if target == PTTTargetTable.emptyBoard { return [] }
+			var page: [PTTArticleSummary] = []
+			if let screen = latestScreen { page = ArticleListingScanner.summaries(in: screen) }
+			guard !page.isEmpty else {
+				failures += 1
+				guard failures <= Self.parseRetryLimit else { throw PTTSessionError.listingParseFailed(board) }
+				// 只補重繪、不翻頁：這一頁沒認出東西，翻過去就真的漏掉了。
+				keys = []
+				continue
+			}
+			failures = 0
+			let advanced: Bool = page.contains { !seen.contains($0.index) }
+			for article in page {
+				seen.insert(article.index)
+				guard (lowerIndex ... upperIndex).contains(article.index) else { continue }
+				collected[article.index] = article
+			}
+			// 用整頁最大編號、不用最後一列：畫面殘影可能讓某一列的編號跳掉，取最大值才穩。
+			let highest: Int = page.lazy.map(\.index).max() ?? 0
+			guard advanced, highest < upperIndex else { break }
+			keys = [.text(Self.listingPageDownKey)]
+		}
+		return collected.values.sorted { $0.index < $1.index }
 	}
 
 	/// 送出一串按鍵，然後等到其中一張目標畫面出現。
@@ -160,18 +225,6 @@ public actor PTTSession {
 	/// 最不該出錯的地方；輪詢版的取消語義直接由睡眠本身提供，也讓假時鐘測試不必
 	/// 模擬喚醒順序。代價是最多多等一個輪詢間隔——相對於站方重繪的百毫秒級節奏可忽略。
 	private static let pollInterval: Duration = .milliseconds(20)
-
-	/// 去除前後空白（不引入 Foundation）。
-	private static func trimmed(_ value: String) -> String {
-		var result: Substring = value[...]
-		while let first = result.first, first.isWhitespace {
-			result = result.dropFirst()
-		}
-		while let last = result.last, last.isWhitespace {
-			result = result.dropLast()
-		}
-		return String(result)
-	}
 
 	/// 畫面快照流。
 	private let screens: AsyncStream<PTTScreen>
