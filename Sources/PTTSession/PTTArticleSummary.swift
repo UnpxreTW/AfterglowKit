@@ -61,4 +61,22 @@ public struct PTTArticleSummary: Equatable, Sendable {
 		self.kind = kind
 		self.title = title
 	}
+
+	// MARK: Internal
+
+	/// 換掉編號、其餘欄位照舊。
+	///
+	/// 供 ``ArticleListingScanner`` 把被游標記號蓋掉的編號位數補回來用。其餘欄位都來自同一列、
+	/// 沒有跟著改的道理，所以這裡只開編號這一個口。
+	func replacingIndex(with index: Int) -> PTTArticleSummary {
+		.init(
+			index: index,
+			mark: mark,
+			pushCount: pushCount,
+			date: date,
+			author: author,
+			kind: kind,
+			title: title
+		)
+	}
 }

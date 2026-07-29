@@ -30,16 +30,35 @@ public enum ArticleListingScanner {
 	/// 略過的底部列數（最後一列是功能提示列、不是文章）。
 	public static let footerLineCount = 1
 
+	/// 編號欄最左側保留給游標記號的欄數。
+	///
+	/// 站方把編號印成右對齊七欄，而原始碼在那一行的註解裡言明那七欄是「五位數 ＋ 兩欄游標
+	/// 記號」；游標本身是 `>`（一欄）或全形圓點（兩欄），移到別列時又是以同寬空白覆蓋回去、
+	/// 不把原本的數字補回來。也就是說**編號欄最左邊這兩欄隨時可能不是數字**。
+	public static let cursorReservedColumns = 2
+
+	/// 一張畫面上最多有幾列的編號可能被游標記號蓋掉。
+	///
+	/// 站方一次只畫一個游標：現在停的那一列被記號蓋住，剛離開的那一列被空白蓋回去。
+	/// 需要重建的列多過這個數量，那就不是游標造成的，而是這張畫面根本不是同一頁。
+	public static let cursorAffectedRowLimit = 2
+
 	/// 判讀整張畫面上所有能認出來的文章列（依畫面由上而下，即編號遞增）。
 	///
 	/// 認不出編號的列（置底文、空白列、殘影）直接略過——清單畫面本來就混著這些東西，
 	/// 略過它們是正常判讀的一部分，不是失敗。整張畫面一列都認不出來才由呼叫端當作
 	/// 判讀失敗處理。
+	///
+	/// **本函式假設整頁的文章列連號遞增**，一般看板清單畫面即是如此（置底文印星號、沒有編號，
+	/// 而且只出現在整份清單的最後）。判讀出來的列會據此過一次校準，把被游標記號蓋掉的編號位數
+	/// 補回來（見 ``cursorReservedColumns``）；整頁對不起來時回空陣列，等同「這張畫面判讀不
+	/// 出來」，由呼叫端重取畫面。編號本來就不連號的畫面不在適用範圍內。
 	public static func summaries(in screen: PTTScreen) -> [PTTArticleSummary] {
-		screen.rows
+		let page: [PTTArticleSummary] = screen.rows
 			.dropFirst(headerLineCount)
 			.dropLast(footerLineCount)
 			.compactMap { summary(in: $0) }
+		return restoringIndices(of: page)
 	}
 
 	/// 判讀單一列；不是文章列時回 `nil`。
@@ -89,6 +108,47 @@ public enum ArticleListingScanner {
 	/// 取某一欄區間的文字。
 	private static func text(_ row: [PTTCell], _ columns: Range<Int>) -> String {
 		PTTScreenText.text(of: row, in: columns)
+	}
+
+	/// 用整頁的連號關係補回被游標記號蓋掉的編號位數。
+	///
+	/// 一頁之內的文章列必定連號遞增——置底文不佔編號，而且只出現在整份清單的最後。
+	/// 游標記號只蓋得掉編號的**前**幾位（欄位是右對齊的），蓋掉之後讀到的值必定是真值的
+	/// 十進位後綴、也必定比真值小；因此各列各自推出來的起始編號裡，**最大**的那個就是真的。
+	///
+	/// !!!: 補回來的值要能通過 ``isTruncation(_:of:)``，**而且需要補的列數不能多過游標蓋得到的
+	/// 列數**。少了後面這道，兩頁位數不同但同餘的畫面會整片通過——例如舊頁 2345 起、新頁 12345
+	/// 起，逐列都「差一位且是後綴」，於是整批舊列被貼上新頁的編號交出去，正好是這裡最該擋的事。
+	/// 對不上就整頁作廢回空陣列、由呼叫端重取；少收一段還看得出來，收到張冠李戴的編號看不出來。
+	private static func restoringIndices(of page: [PTTArticleSummary]) -> [PTTArticleSummary] {
+		let candidates: [Int] = page.enumerated().map { $0.element.index - $0.offset }
+		guard let base: Int = candidates.max() else { return page }
+		var restored: [PTTArticleSummary] = []
+		restored.reserveCapacity(page.count)
+		var rebuilt = 0
+		for (offset, article) in page.enumerated() {
+			let index: Int = base + offset
+			if index == article.index {
+				restored.append(article)
+				continue
+			}
+			rebuilt += 1
+			guard rebuilt <= cursorAffectedRowLimit, isTruncation(article.index, of: index) else { return [] }
+			restored.append(article.replacingIndex(with: index))
+		}
+		return restored
+	}
+
+	/// 讀到的編號是不是「真值被游標記號蓋掉前幾位」之後的樣子。
+	///
+	/// 蓋掉的欄數不可能超過站方保留給游標的那幾欄；蓋掉之後剩下的必定是真值的十進位後綴。
+	/// 兩個條件都成立才敢改寫編號——否則那是別頁的列，不是被蓋掉的列。
+	private static func isTruncation(_ read: Int, of actual: Int) -> Bool {
+		let readDigits: String = .init(read)
+		let actualDigits: String = .init(actual)
+		let missing: Int = actualDigits.count - readDigits.count
+		guard missing > 0, missing <= cursorReservedColumns else { return false }
+		return actualDigits.hasSuffix(readDigits)
 	}
 
 	/// 判讀推文數欄的兩格內容。

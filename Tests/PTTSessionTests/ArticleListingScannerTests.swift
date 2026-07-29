@@ -148,15 +148,96 @@ private final class ArticleListingScannerTests {
 		#expect(summaries.map(\.index) == [9458])
 	}
 
-	/// 表頭與底部功能列不參與判讀。
+	/// 表頭不參與判讀。
 	@Test
-	private func `header and footer rows are not parsed`() {
+	private func `header rows are not parsed`() {
 		var header: [String] = Self.header
 		header[0] = TestScreens.articleRow(index: 9999, title: "表頭不該被當成文章")
 		let screen: PTTScreen = makeScreen(
 			header + [TestScreens.articleRow(index: 1022)] + Self.footer
 		)
 		#expect(ArticleListingScanner.summaries(in: screen).map(\.index) == [1022])
+	}
+
+	/// 底部功能列不參與判讀。
+	///
+	/// !!!: 功能列要擺在**畫面最後一列**才測得到——畫面一定是滿的 24 列，隨手接在內容後面的話，
+	/// 被略過的其實是下面那些空白補白列，`footerLineCount` 改成 0 這條測試照樣會過。
+	@Test
+	private func `the bottom function row is not parsed`() {
+		var lines: [String] = .init(repeating: "", count: PTTTerminal.rows)
+		for (offset, line) in Self.header.enumerated() {
+			lines[offset] = line
+		}
+		lines[Self.header.count] = TestScreens.articleRow(index: 1022)
+		lines[PTTTerminal.rows - 1] = TestScreens.articleRow(index: 8888, title: "功能列不該被當成文章")
+		#expect(ArticleListingScanner.summaries(in: makeScreen(lines)).map(\.index) == [1022])
+	}
+
+	/// 游標記號蓋掉編號欄最左邊兩欄時，用整頁的連號關係把位數補回來。
+	///
+	/// !!!: 這是最惡劣的一種壞法——蓋掉之後**仍是個合法的數字**，不補回來就會安靜地把這一列
+	/// 記到別篇文章的編號底下。站方保留給游標的就是這兩欄，五位數以上的看板天天踩得到。
+	@Test
+	private func `the cursor marker does not truncate the index`() {
+		let screen: PTTScreen = makeScreen(
+			Self.header
+				+ [TestScreens.articleRow(index: 781_508, cursorColumns: 2)]
+				+ (781_509 ... 781_512).map { TestScreens.articleRow(index: $0) }
+				+ Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).map(\.index) == Array(781_508 ... 781_512))
+	}
+
+	/// 編號滿七位時連一欄的 ASCII 游標都蓋得到，一樣補得回來。
+	@Test
+	private func `a seven digit index survives a one column cursor`() {
+		let screen: PTTScreen = makeScreen(
+			Self.header
+				+ [TestScreens.articleRow(index: 1_234_567, cursorColumns: 1)]
+				+ [TestScreens.articleRow(index: 1_234_568)]
+				+ Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).map(\.index) == [1_234_567, 1_234_568])
+	}
+
+	/// 缺太多位就不是游標蓋出來的——後綴對得上也不重建，整頁作廢。
+	@Test
+	private func `an index missing more digits than the cursor covers is discarded`() {
+		let screen: PTTScreen = makeScreen(
+			Self.header
+				+ [TestScreens.articleRow(index: 45)]
+				+ [TestScreens.articleRow(index: 12_346)]
+				+ Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).isEmpty)
+	}
+
+	/// 要重建的列數多過游標蓋得到的列數就整頁作廢。
+	///
+	/// !!!: 這道閘擋的是「兩頁位數不同、卻逐列同餘」的殘影——舊頁 2345 起、新頁 12345 起，
+	/// 每一列都「差一位而且是後綴」，光靠後綴判準會整批放行，把舊列貼上新頁的編號交出去。
+	@Test
+	private func `a listing needing more rebuilt rows than the cursor covers is discarded`() {
+		let screen: PTTScreen = makeScreen(
+			Self.header
+				+ (2345 ... 2354).map { TestScreens.articleRow(index: $0) }
+				+ (12_355 ... 12_359).map { TestScreens.articleRow(index: $0) }
+				+ Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).isEmpty)
+	}
+
+	/// 重繪只到一半的畫面（上半是新頁、下半還是舊頁）整頁作廢，不把兩頁混起來交出去。
+	@Test
+	private func `a half redrawn listing is discarded`() {
+		let screen: PTTScreen = makeScreen(
+			Self.header
+				+ (1200 ... 1202).map { TestScreens.articleRow(index: $0) }
+				+ (980 ... 982).map { TestScreens.articleRow(index: $0) }
+				+ Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).isEmpty)
 	}
 
 	/// 整張畫面沒有任何文章列時回空陣列（呼叫端據此重取畫面）。

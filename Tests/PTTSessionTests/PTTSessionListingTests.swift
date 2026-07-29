@@ -60,7 +60,7 @@ private final class PTTSessionListingTests {
 		harness.finish()
 	}
 
-	/// 翻頁後畫面沒有再往前（已到清單末端）就收手，回已收到的部分。
+	/// 翻頁後畫面**連著幾次**都沒再往前才收手，回已收到的部分。
 	@Test
 	private func `paging stops once the listing no longer advances`() async throws {
 		let harness: SessionHarness = .init()
@@ -73,12 +73,75 @@ private final class PTTSessionListingTests {
 		harness.yield(TestScreens.inBoard)
 		#expect(await harness.waitForSend(count: 2))
 		harness.yield(TestScreens.articleListing(from: 1000, through: 1005))
-		#expect(await harness.waitForSend(count: 3))
-		harness.yield(TestScreens.articleListing(from: 1000, through: 1005))
+		for attempt in 3 ... (3 + PTTSession.parseRetryLimit) {
+			#expect(await harness.waitForSend(count: attempt))
+			harness.yield(TestScreens.articleListing(from: 1000, through: 1005))
+		}
 		#expect(await harness.waitForCompletion())
 		try await task.value
 		#expect(result.value?.map(\.index) == Array(1000 ... 1005))
-		#expect(harness.sink.count == 3)
+		#expect(harness.sink.count == 3 + PTTSession.parseRetryLimit)
+		harness.finish()
+	}
+
+	/// 同一頁再出現一次不算「清單到底了」——重取畫面再讀，讀到新的就繼續往下收。
+	///
+	/// !!!: 上一步留下的殘影跟這一頁長得一模一樣，等畫面那關只認得出「還在看板裡」。
+	/// 直接收手的話會安靜地少收一段還說成功。
+	@Test
+	private func `a repeated page is re-read before the listing is called finished`() async throws {
+		let harness: SessionHarness = .init()
+		let result: ResultBox<[PTTArticleSummary]> = .init()
+		let task: Task<Void, any Error> = harness.run { session in
+			let page: [PTTArticleSummary] = try await session.articles(inBoard: "Test", from: 1000, through: 1011)
+			result.set(page)
+		}
+		#expect(await harness.waitForSend(count: 1))
+		harness.yield(TestScreens.inBoard)
+		#expect(await harness.waitForSend(count: 2))
+		harness.yield(TestScreens.articleListing(from: 1000, through: 1005))
+		#expect(await harness.waitForSend(count: 3))
+		harness.yield(TestScreens.articleListing(from: 1000, through: 1005))
+		#expect(await harness.waitForSend(count: 4))
+		harness.yield(TestScreens.articleListing(from: 1006, through: 1011))
+		#expect(await harness.waitForCompletion())
+		try await task.value
+		#expect(result.value?.map(\.index) == Array(1000 ... 1011))
+		// 重讀那一批只有重繪鍵：翻頁鍵混進來就真的跳過一頁了。
+		let redrawOnly: [PTTKey] = [.formFeed]
+		#expect(harness.sink.batches[3] == redrawOnly)
+		#expect(harness.sink.count == 4)
+		harness.finish()
+	}
+
+	/// 判讀不出來與停滯交替出現時照樣丟錯，不會回報成功。
+	///
+	/// !!!: 兩個計數器若讓對方歸零，這條交錯序列永遠碰不到丟錯的門檻——一半的畫面根本沒讀
+	/// 出來，呼叫端卻收到一份殘缺資料外加一個成功。
+	@Test
+	private func `unreadable pages interleaved with stalls still report failure`() async {
+		let harness: SessionHarness = .init()
+		let task: Task<Void, any Error> = harness.run { session in
+			_ = try await session.articles(inBoard: "Test", from: 1000, through: 9999)
+		}
+		#expect(await harness.waitForSend(count: 1))
+		harness.yield(TestScreens.inBoard)
+		#expect(await harness.waitForSend(count: 2))
+		harness.yield(TestScreens.articleListing(from: 1000, through: 1005))
+		var sends = 2
+		for _ in 1 ... PTTSession.parseRetryLimit {
+			sends += 1
+			#expect(await harness.waitForSend(count: sends))
+			harness.yield(TestScreens.inBoard)
+			sends += 1
+			#expect(await harness.waitForSend(count: sends))
+			harness.yield(TestScreens.articleListing(from: 1000, through: 1005))
+		}
+		sends += 1
+		#expect(await harness.waitForSend(count: sends))
+		harness.yield(TestScreens.inBoard)
+		#expect(await harness.waitForCompletion())
+		await #expect(throws: PTTSessionError.listingParseFailed("Test")) { try await task.value }
 		harness.finish()
 	}
 

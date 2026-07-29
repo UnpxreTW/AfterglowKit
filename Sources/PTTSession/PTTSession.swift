@@ -46,7 +46,7 @@ public actor PTTSession {
 	/// 清單畫面判讀失敗時的重試次數（畫面競態是常態，重取一次多半就好了）。
 	public static let parseRetryLimit = 2
 
-	/// 單次清單讀取最多翻幾頁。
+	/// 單次清單讀取最多翻幾頁（重取畫面不佔額度）。
 	///
 	/// 純粹是防跑掉的上限：一頁約二十列，四十頁足以涵蓋任何合理的單次請求區間，
 	/// 而真正的收斂條件是「收到 `upperIndex`」或「清單不再往前」。
@@ -130,7 +130,10 @@ public actor PTTSession {
 		var seen: Set<Int> = []
 		var keys: [PTTKey] = [.text(String(lowerIndex)), .enter]
 		var failures = 0
-		for _ in 0 ..< Self.maximumListingPages {
+		var stalls = 0
+		var pages = 0
+		// 迴圈的界在三個計數器上：翻頁到上限、判讀連敗到上限（丟錯）、停滯連續到上限（收手）。
+		while pages < Self.maximumListingPages {
 			let target: PTTScreenTarget = try await send(
 				keys,
 				awaiting: [PTTTargetTable.emptyBoard, PTTTargetTable.inBoard],
@@ -146,16 +149,28 @@ public actor PTTSession {
 				keys = []
 				continue
 			}
+			// !!!: 沒有新編號**不等於**清單到底了——上一步留下的殘影跟這一頁長得一模一樣，
+			// 而等畫面那關只認得出「還在看板裡」。這裡若直接收手，就會安靜地少收一段還說成功。
+			// 判讀失敗有重取畫面這條路，這一條也要有，兩邊的重試次數才對稱。
+			guard page.contains(where: { !seen.contains($0.index) }) else {
+				stalls += 1
+				guard stalls <= Self.parseRetryLimit else { break }
+				keys = []
+				continue
+			}
+			// !!!: 兩個計數器都只在**真的有進展**時歸零。若「畫面非空」就把 `failures` 歸零，
+			// 判讀失敗與停滯交替出現時它永遠回不到上限、丟錯那條路就走不到——一半的畫面根本
+			// 沒讀出來，呼叫端卻收到一份殘缺資料加一個成功。
 			failures = 0
-			let advanced: Bool = page.contains { !seen.contains($0.index) }
-			for article in page {
-				seen.insert(article.index)
-				guard (lowerIndex ... upperIndex).contains(article.index) else { continue }
+			stalls = 0
+			pages += 1
+			seen.formUnion(page.lazy.map(\.index))
+			for article in page where (lowerIndex ... upperIndex).contains(article.index) {
 				collected[article.index] = article
 			}
-			// 用整頁最大編號、不用最後一列：畫面殘影可能讓某一列的編號跳掉，取最大值才穩。
+			// 用整頁最大編號、不用最後一列：不預設畫面列必定遞增。
 			let highest: Int = page.lazy.map(\.index).max() ?? 0
-			guard advanced, highest < upperIndex else { break }
+			guard highest < upperIndex else { break }
 			keys = [.text(Self.listingPageDownKey)]
 		}
 		return collected.values.sorted { $0.index < $1.index }

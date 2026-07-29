@@ -66,7 +66,8 @@ enum TestScreens {
 	///
 	/// 這個版本只保證**編號欄**落在正確的欄位上，其餘欄位是示意骨架——
 	/// 供只看編號的判讀（``ArticleIndexScanner``）使用。要逐欄位斷言請用
-	/// ``articleListing(from:through:)`` 或 ``articleRow(index:cursor:mark:pushCount:date:author:kind:title:)``。
+	/// ``articleListing(from:through:)`` 或
+	/// ``articleRow(index:cursorColumns:mark:pushCount:date:author:kind:title:)``。
 	static func boardListing(from lower: Int, through upper: Int) -> [String] {
 		boardHeader + (lower ... upper).map { "  \($0) + 7/23 alice      □ 測試標題" } + boardFooter
 	}
@@ -76,9 +77,13 @@ enum TestScreens {
 	/// 欄位起點以**欄**計（非字元）：編號 0、狀態記號 8、推文數 9、日期 11、作者 17、
 	/// 類別記號 30、標題 33。`pushCount`、`date`、`kind` 須自行給滿欄寬（分別為 2、5、2 欄），
 	/// 因為它們可能是全形字——這裡不替呼叫端猜顯示寬度。
+	///
+	/// `cursorColumns` 模擬游標記號佔掉編號欄最左邊幾欄：一欄是 ASCII 游標、兩欄是全形圓點，
+	/// 而站方把游標移開時是以同寬空白覆蓋回去、不還原數字。這裡一律填空白——`>`、圓點、空白
+	/// 對編號判讀是同一回事（都不是數字），差別只在蓋掉幾欄。
 	static func articleRow(
 		index: Int,
-		cursor: Bool = false,
+		cursorColumns: Int = 0,
 		mark: Character = " ",
 		pushCount: String = "  ",
 		date: String = " 7/23",
@@ -87,7 +92,9 @@ enum TestScreens {
 		title: String = "測試標題"
 	) -> String {
 		var indexField: String = .init(repeating: " ", count: max(0, 7 - "\(index)".count)) + "\(index)"
-		if cursor { indexField = ">" + indexField.dropFirst() }
+		if cursorColumns > 0 {
+			indexField = String(repeating: " ", count: cursorColumns) + indexField.dropFirst(cursorColumns)
+		}
 		let authorField: String = author + String(repeating: " ", count: max(0, 13 - author.count))
 		return indexField + " " + String(mark) + pushCount + date + " " + authorField + kind + " " + title
 	}
