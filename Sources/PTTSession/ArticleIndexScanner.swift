@@ -52,13 +52,16 @@ public enum ArticleIndexScanner {
 		return nil
 	}
 
-	// MARK: Private
+	// MARK: Internal
 
 	/// 取一列最左側 `columns` 欄裡所有的十進位數字串。
 	///
 	/// 逐格走而非先組字串再切——格數就是顯示欄數，全形字不會讓欄位計算偏掉。
 	/// 只認 ASCII 數字：全形數字不會出現在編號欄，放行只會多開一條誤判的路。
-	private static func numbers(inFirst columns: Int, of row: [PTTCell]) -> [Int] {
+	///
+	/// ``ArticleListingScanner`` 也用這個函式取每一列的編號，故留在模組內共用；
+	/// 兩邊取的欄寬不同（本型別掃的範圍較寬、為的是連號驗證），欄寬由呼叫端指定。
+	static func numbers(inFirst columns: Int, of row: [PTTCell]) -> [Int] {
 		var found: [Int] = []
 		var digits: String = ""
 		for cell in row.prefix(columns) {
