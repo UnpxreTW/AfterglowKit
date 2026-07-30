@@ -6,6 +6,8 @@
 //
 //  SPDX-License-Identifier: Apache-2.0
 
+import PTTTerminal
+
 // MARK: - TestScreens
 
 /// 測試用的合成畫面內容。
@@ -102,5 +104,81 @@ enum TestScreens {
 	/// 依站方欄位寬度組一整張清單畫面（表頭 + 指定編號區間 + 底部功能列）。
 	static func articleListing(from lower: Int, through upper: Int) -> [String] {
 		boardHeader + (lower ... upper).map { articleRow(index: $0) } + boardFooter
+	}
+
+	// MARK: 文章內文（M3）
+
+	/// 本站文章的表頭三列（首行「作者」開頭）。
+	static let standardArticleHeader: [String] = [
+		"作者  alice (Alice)                              看板  Test",
+		"標題  測試標題",
+		"時間  Mon Jul 30 12:00:00 2026"
+	]
+
+	/// 轉信文章的表頭四列（首行「發信人」開頭）。
+	static let forwardedArticleHeader: [String] = [
+		"發信人  alice (Alice)                            看板  Test",
+		"標題  Fw: 測試標題",
+		"時間  Mon Jul 30 12:00:00 2026",
+		"文章網址  https://example.invalid/x"
+	]
+
+	/// pmore 表頭後那條分隔線（畫滿整列、不是檔案內容）。
+	static let headerSeparator = String(repeating: "─", count: 78)
+
+	/// 推文原始行的三個樣式（推 / 噓 / →）。
+	static let sampleCommentLines: [String] = [
+		"推 bob:推文內容                                          07/30 12:01",
+		"噓 carol:噓文內容                                         07/30 12:02",
+		"→ dave:箭頭補充內容                                       07/30 12:03"
+	]
+
+	/// 站方偵測到可播放文字動畫的詢問。
+	static let movieDetectedPromptScreen: [String] = [" ★ 這份文件是可播放的文字動畫，要開始播放嗎? [Y/n]"]
+
+	/// 傳統動畫檔：詢問播放速度。
+	static let traditionalAnimationSpeedPromptScreen: [String] = ["這可能是傳統動畫檔, 若要直接播放請輸入速度(秒): "]
+
+	/// 傳統動畫檔：詢問是否模擬 24 行。
+	static let traditionalLineCountPromptScreen: [String] = [
+		"傳統動畫是以 24 行為單位設計的, 要模擬 24 行嗎? (否則會用現在的行數)[Yn] "
+	]
+
+	/// 舊式狀態列（無行號區間，`bpref.oldstatusbar` 走這條時 footer 認不出行號）。
+	static let oldStyleStatusBar = "  瀏覽 P.1(50%)  "
+
+	/// `override_msg` 蓋掉行號區間那一段的示意文字（同樣認不出行號）。
+	static let overrideMessage = " ‣ 已依您的要求執行 "
+
+	/// 依指定行數量產內文行（純測試骨架，內容本身不重要）。
+	static func articleBodyLines(count: Int, startingAt start: Int = 1) -> [String] {
+		(start ..< (start + count)).map { "內文第\($0)行的示意文字" }
+	}
+
+	/// footer「目前顯示: 第 N~M 行」格式（未水平捲動）。
+	static func footerCurrentDisplay(_ range: ClosedRange<Int>) -> String {
+		" 目前顯示: 第 \(twoDigits(range.lowerBound))~\(twoDigits(range.upperBound)) 行"
+	}
+
+	/// footer「顯示範圍: N~M 欄位, N~M 行」格式（水平捲動時）。
+	static func footerScrolled(columns: ClosedRange<Int> = 1 ... 80, lines range: ClosedRange<Int>) -> String {
+		let lines: String = "\(twoDigits(range.lowerBound))~\(twoDigits(range.upperBound))"
+		return " 顯示範圍: \(columns.lowerBound)~\(columns.upperBound) 欄位, \(lines) 行"
+	}
+
+	/// 組一頁文章內文畫面：`contentRows`（可能含表頭 + 分隔線，不含 footer）依序填進
+	/// 前 ``PTTTerminal/rows`` `- 1` 列，缺的列補空白；最後一列固定放 `footer`。
+	static func articleContentScreen(contentRows: [String], footer: String) -> [String] {
+		var lines: [String] = Array(contentRows.prefix(PTTTerminal.rows - 1))
+		while lines.count < PTTTerminal.rows - 1 { lines.append("") }
+		lines.append(footer)
+		return lines
+	}
+
+	// MARK: Private
+
+	/// 個位數補一個前導零，符合站方 `%02d` 格式；不足兩位以上的值原樣輸出。
+	private static func twoDigits(_ value: Int) -> String {
+		value < 10 ? "0\(value)" : "\(value)"
 	}
 }

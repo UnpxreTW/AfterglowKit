@@ -50,6 +50,48 @@ public enum PTTTargetTable {
 		outcome: .arrived
 	)
 
+	/// 文章內文畫面：footer 印出「目前顯示: 第 N~M 行」（未水平捲動時的格式）。
+	///
+	/// `outcome` 是 `.arrived`（不是自動應答）——呼叫端要拿到 `latestScreen` 自行判讀
+	/// footer 的實際行號區間，不能只知道「命中了」。
+	public static let articleContentPage: PTTScreenTarget = .init(
+		name: "文章內文（目前顯示）",
+		patterns: ["目前顯示"],
+		outcome: .arrived
+	)
+
+	/// 文章內文畫面：footer 印出「顯示範圍: N~M 欄位, N~M 行」（水平捲動時的格式）。
+	public static let articleContentPageScrolled: PTTScreenTarget = .init(
+		name: "文章內文（顯示範圍）",
+		patterns: ["顯示範圍"],
+		outcome: .arrived
+	)
+
+	/// 偵測到可播放的文字動畫，pmore 詢問是否開始播放。
+	///
+	/// `outcome` 是 `.arrived`——呼叫端要親自答 `n`（見 M3-b 拍板：引擎一律不播），
+	/// 不能交給全域攔截表的自動應答（那樣呼叫端就無法得知「這篇是動畫」）。
+	/// 全域攔截表另有一份等義的自動應答版（見 ``globals``），供本表以外的流程兜底。
+	public static let movieDetectedPrompt: PTTScreenTarget = .init(
+		name: "偵測到可播放的文字動畫",
+		patterns: ["這份文件是可播放的文字動畫"],
+		outcome: .arrived
+	)
+
+	/// 傳統動畫檔：詢問要不要輸入速度直接播放。
+	public static let traditionalAnimationSpeedPrompt: PTTScreenTarget = .init(
+		name: "傳統動畫播放速度",
+		patterns: ["若要直接播放請輸入速度"],
+		outcome: .arrived
+	)
+
+	/// 傳統動畫檔：詢問要不要模擬 24 行版面。
+	public static let traditionalAnimationLineCountPrompt: PTTScreenTarget = .init(
+		name: "傳統動畫是否模擬 24 行",
+		patterns: ["要模擬 24 行嗎"],
+		outcome: .arrived
+	)
+
 	/// 全域攔截表：每一次等畫面都會附掛在呼叫端自己的目標之後。
 	///
 	/// 順序即優先序（先命中先處置）。資源上限擺第一，確保它不會被任何其他分支蓋過——
@@ -73,6 +115,9 @@ public enum PTTTargetTable {
 		mailMenu,
 		mailBox,
 		animationPlaying,
+		movieDetectedFallback,
+		traditionalAnimationSpeedFallback,
+		traditionalAnimationLineCountFallback,
 		anyKey
 	]
 
@@ -211,6 +256,30 @@ public enum PTTTargetTable {
 		name: "互動式動畫播放中",
 		patterns: ["互動式動畫播放中"],
 		outcome: .respond([.interrupt, .interrupt, .interrupt, .interrupt, .interrupt])
+	)
+
+	/// 動畫偵測（全域安全網）：任何未特別處理動畫的流程若意外撞見，一律答 `n` 不播、
+	/// 別卡住讀取流程。``PTTSession/articleContent(inBoard:at:)`` 把同一 pattern 的
+	/// `.arrived` 版本（``movieDetectedPrompt``）放進自己的呼叫端目標，比對時呼叫端目標
+	/// 先於全域表被檢查，因此該路徑會先攔下、不會落到這裡。
+	static let movieDetectedFallback: PTTScreenTarget = .init(
+		name: "偵測到可播放的文字動畫（全域安全網）",
+		patterns: ["這份文件是可播放的文字動畫"],
+		outcome: .respond([.text("n"), .enter])
+	)
+
+	/// 傳統動畫播放速度（全域安全網）：留空跳過，不提供速度就不播。
+	static let traditionalAnimationSpeedFallback: PTTScreenTarget = .init(
+		name: "傳統動畫播放速度（全域安全網）",
+		patterns: ["若要直接播放請輸入速度"],
+		outcome: .respond([.enter])
+	)
+
+	/// 傳統動畫是否模擬 24 行（全域安全網）：答 `n` 用現在的行數。
+	static let traditionalAnimationLineCountFallback: PTTScreenTarget = .init(
+		name: "傳統動畫是否模擬 24 行（全域安全網）",
+		patterns: ["要模擬 24 行嗎"],
+		outcome: .respond([.text("n"), .enter])
 	)
 
 	/// 請按任意鍵繼續：按空白鍵。

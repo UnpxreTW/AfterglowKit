@@ -301,7 +301,8 @@ public actor PTTSession {
 	/// 過節流閘送出一串按鍵，尾端補上重繪鍵；回傳送出前最後一刻的畫面世代。
 	///
 	/// 回傳值就是「這次送鍵的回應從哪一張畫面開始算」的界線，見 ``send(_:awaiting:timeout:)``。
-	private func sendKeys(_ keys: [PTTKey]) async throws -> Int {
+	/// 非 `private`：`PTTSession+ArticleContent.swift` 需要「只送鍵、不等特定畫面」這個原語。
+	func sendKeys(_ keys: [PTTKey]) async throws -> Int {
 		let delay: Duration = throttle.requiredDelay(now: clock.now())
 		if delay > .zero { try await clock.sleep(delay) }
 		throttle.recordSend(at: clock.now())
@@ -380,7 +381,8 @@ public actor PTTSession {
 	///
 	/// 尾端連送中斷鍵是為了跳過某些看板的進板動畫；動畫若有「任意鍵」或
 	/// 「互動式動畫播放中」的提示，則由全域攔截表接手。
-	private func goToBoard(_ board: String) async throws {
+	/// 非 `private`：`PTTSession+ArticleContent.swift` 同樣要先進板才能跳到文章。
+	func goToBoard(_ board: String) async throws {
 		var keys: [PTTKey] = PTTKey.mainMenuReset
 		keys.append(.text("qs"))
 		keys.append(.text(board))
