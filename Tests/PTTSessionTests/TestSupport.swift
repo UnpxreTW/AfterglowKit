@@ -280,7 +280,10 @@ func makeScreen(_ lines: [String]) -> PTTScreen {
 }
 
 /// 組一個預設配色的格子。
-private func makeCell(_ character: Character, width: Int) -> PTTCell {
+///
+/// 非 `private`：``ArticleContentScannerTests`` 也需要直接組 `[PTTCell]` 列
+/// （測折行合併／80 欄無記號續行），不透過 ``makeScreen(_:)`` 整張畫面繞。
+func makeCell(_ character: Character, width: Int) -> PTTCell {
 	PTTCell(
 		character: character,
 		width: width,

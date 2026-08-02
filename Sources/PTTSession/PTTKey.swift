@@ -27,6 +27,14 @@ public enum PTTKey: Equatable, Sendable {
 	/// Ctrl+C（0x03）：中斷進板動畫等佔用畫面的播放。
 	case interrupt
 
+	/// Ctrl+F（0x06）：文章內文的翻頁鍵。
+	///
+	/// !!!: 刻意不用空白鍵翻頁。空白鍵在最後一頁按下會直接離開這篇、跳到下一篇
+	/// （pmore `mf_viewedAll()` 為真時 `case ' '` 的 `retval = READ_NEXT`）；`Ctrl+F`
+	/// 對應的自動跳下一篇分支包在 `PMORE_AUTONEXT_ON_PAGEFLIP` 內、pttbbs 未定義該巨集，
+	/// 末頁按 `Ctrl+F` 因此是無副作用的 no-op，可安全當「還有沒有下一頁」的探針。
+	case pageForward
+
 	/// 方向鍵：上。
 	case arrowUp
 
@@ -62,6 +70,7 @@ public enum PTTKey: Equatable, Sendable {
 		case .enter: [0x0D]
 		case .formFeed: [0x0C]
 		case .interrupt: [0x03]
+		case .pageForward: [0x06]
 		case .arrowUp: [0x1B, 0x4F, 0x41]
 		case .arrowDown: [0x1B, 0x4F, 0x42]
 		case .arrowRight: [0x1B, 0x4F, 0x43]
