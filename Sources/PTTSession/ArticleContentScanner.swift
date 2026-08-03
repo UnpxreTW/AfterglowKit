@@ -114,9 +114,17 @@ public enum ArticleContentScanner {
 
 	/// 這一行是不是推文原始行（推 / 噓 / →）。
 	///
-	/// !!!: 判準是三個推文符號 + 一格空白的固定前綴，這是 PTT 慣例格式，非本檔已讀碼實證
-	/// 的 `mbbsd/pmore.c` 片段所直接涵蓋（該檔只讀了畫面版面與翻頁行為，未讀推文列印段）——
-	/// 標記為推論，掛真帳號實測後若前綴有出入，修這裡即可。
+	/// 前綴取自站方寫檔時的格式：`FormatCommentString()` 的格式字串以 `"%s%s "` 開頭，第一個
+	/// `%s` 是色碼（`ctype_attr2`）、第二個才是種類記號（`ctype` ＝「推」「噓」「→」），之後
+	/// 那一格空白是格式字串裡的字面值。色碼到判讀端時已經沒了，所以剩下「記號 ＋ 一格空白」。
+	/// 來源 https://github.com/ptt/pttbbs 的 `mbbsd/comments.c`，與 ``PTTCommentType`` 同一處。
+	///
+	/// !!!: 這一關只認前綴、不驗整行格式，兩者刻意不合併：前綴決定這列進不進
+	/// ``PTTArticleContent/commentLines``（進去的都保留原文），整行格式則決定它判不判得成
+	/// ``PTTComment``。代價是這裡是**過近似**——內文行剛好以這三個記號開頭時也會被收成推文
+	/// 原始行；好處是認得出前綴卻判讀不出欄位的列不會被默默丟掉，而是落在
+	/// ``PTTArticleContent/unparsedCommentLineCount`` 裡讓呼叫端看得見。分類收得寬、判讀失敗
+	/// 看得見，比分類收得緊、判錯的列悄悄消失安全。
 	public static func isCommentLine(_ line: String) -> Bool {
 		commentPrefixes.contains { line.hasPrefix($0) }
 	}
@@ -182,7 +190,7 @@ public enum ArticleContentScanner {
 
 	// MARK: Private
 
-	/// 推文列的固定前綴（見 ``isCommentLine(_:)`` 型別註解的推論警語）。
+	/// 推文列的固定前綴（出處見 ``isCommentLine(_:)``）。
 	private static let commentPrefixes: [String] = ["推 ", "噓 ", "→ "]
 
 	/// 表頭列數（未計分隔線、未套用「末列空白再減一」）。

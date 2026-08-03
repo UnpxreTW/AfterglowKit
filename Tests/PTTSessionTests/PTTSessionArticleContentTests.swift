@@ -18,7 +18,7 @@ private final class PTTSessionArticleContentTests {
 
 	/// 兩頁文章：首頁判出表頭、次頁與首頁重疊一行銜接、`Ctrl+F` 再送一次收到相同行號區間
 	/// 即正常收斂（必收 case：末頁 `Ctrl+F` no-op 後正確收斂）。順便驗證推文原始行與
-	/// 內文行正確分流。
+	/// 內文行正確分流，以及那些原始行一路判讀成結構化推文（欄位層另有單元測試）。
 	@Test
 	private func `reads across pages and converges when the range stops advancing`() async throws {
 		let harness: SessionHarness = .init()
@@ -61,6 +61,9 @@ private final class PTTSessionArticleContentTests {
 		#expect(content.header?.fields.count == 3)
 		#expect(content.header?.fields.first?.name == "作者")
 		#expect(content.commentLines == [TestScreens.sampleCommentLines[0]])
+		#expect(content.comments.map(\.type) == [.push])
+		#expect(content.comments.map(\.author) == ["bob"])
+		#expect(content.unparsedCommentLineCount == 0)
 		#expect(content.bodyLines.count == 40) // 檔案行 5~44，扣掉被換成推文的第 45 行
 		#expect(content.bodyLines.first == "內文第5行的示意文字")
 		#expect(content.bodyLines.last == "內文第44行的示意文字")

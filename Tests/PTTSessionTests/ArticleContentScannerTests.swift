@@ -142,6 +142,14 @@ private final class ArticleContentScannerTests {
 	private func `an ordinary body line is not classified as a comment`() {
 		#expect(!ArticleContentScanner.isCommentLine("這是一般內文，不是推文"))
 	}
+
+	/// 記號之後那一格空白是前綴的一部分，不是排版——站方格式字串裡它是字面值。
+	/// 少了這一關，「推薦」「→這行」這種內文開頭會被當成推文原始行。
+	@Test
+	private func `a comment mark without the trailing space is not a comment line`() {
+		#expect(!ArticleContentScanner.isCommentLine("推薦這家店的滷肉飯"))
+		#expect(!ArticleContentScanner.isCommentLine("→這行沒有那一格空白"))
+	}
 }
 
 /// 組一列 80 欄寬的 `[PTTCell]`：`text` 之後補半形空白到欄寬（測試只用 ASCII，寬度皆為 1）。
