@@ -108,10 +108,14 @@ public actor PTTSession {
 	/// 讀取指定看板某一段編號區間的文章清單。
 	///
 	/// 做法是進板後跳到 `lowerIndex`，逐頁往下翻、把每頁認得出來的列收進來，直到收到
-	/// `upperIndex`、清單不再往前、或翻頁次數用盡為止。回傳依編號遞增排序。
+	/// `upperIndex`、清單不再往前、或翻頁次數用盡為止。回傳的文章依編號遞增排序。
 	///
-	/// 區間內沒有任何文章時回空陣列——「查無」是正常結果、不是錯誤。看板本身沒有文章時
-	/// 同樣回空陣列（與 ``newestIndex(ofBoard:)`` 回 `0` 是同一張畫面）。
+	/// 區間內沒有任何文章時回空清單——「查無」是正常結果、不是錯誤。看板本身沒有文章時
+	/// 同樣回空清單（與 ``newestIndex(ofBoard:)`` 回 `0` 是同一張畫面）。
+	///
+	/// !!!: 收不齊時**不**靜默截斷：翻頁次數用盡、或收到的編號中間出現斷洞（＝確定漏掉整頁）
+	/// 時，回傳的 ``PTTArticleListing/isComplete`` 為 `false`，已收到的部分照樣附上。清單停在
+	/// `upperIndex` 之前本身不算不完整——請求區間超過看板現有文章時那是正確答案。
 	///
 	/// !!!: 不照上游用「游標所在列」當解析起點。上游得先往回跳一大段再跳回來，把目標編號
 	/// 頂到游標列，然後只解析游標以下——那是為了在沒有編號過濾的前提下確保拿到的是想要的
@@ -121,10 +125,12 @@ public actor PTTSession {
 		inBoard board: String,
 		from lowerIndex: Int,
 		through upperIndex: Int
-	) async throws -> [PTTArticleSummary] {
+	) async throws -> PTTArticleListing {
 		guard lowerIndex >= 1, lowerIndex <= upperIndex else { throw PTTSessionError.invalidIndexRange }
 		try await goToBoard(board)
 		var collected: [Int: PTTArticleSummary] = [:]
+		// 迴圈是走到清單盡頭才停的，還是翻頁次數先用完——兩者的結果長得一樣，只有這裡分得出來。
+		var reachedListingEnd = false
 		// !!!: 「這一頁有沒有往前」要看**所有**判讀出來的編號，不能只看已收進區間的那些。
 		// 只比對 `collected` 的話，一頁全落在區間外時每輪都會判成「有進展」，畫面卡住也照翻到上限。
 		var seen: Set<Int> = []
@@ -139,7 +145,7 @@ public actor PTTSession {
 				awaiting: [PTTTargetTable.emptyBoard, PTTTargetTable.inBoard],
 				timeout: Self.standardTimeout
 			)
-			if target == PTTTargetTable.emptyBoard { return [] }
+			if target == PTTTargetTable.emptyBoard { return .init(articles: [], isComplete: true) }
 			var page: [PTTArticleSummary] = []
 			if let screen = latestScreen { page = ArticleListingScanner.summaries(in: screen) }
 			guard !page.isEmpty else {
@@ -154,7 +160,10 @@ public actor PTTSession {
 			// 判讀失敗有重取畫面這條路，這一條也要有，兩邊的重試次數才對稱。
 			guard page.contains(where: { !seen.contains($0.index) }) else {
 				stalls += 1
-				guard stalls <= Self.parseRetryLimit else { break }
+				guard stalls <= Self.parseRetryLimit else {
+					reachedListingEnd = true
+					break
+				}
 				keys = []
 				continue
 			}
@@ -170,10 +179,14 @@ public actor PTTSession {
 			}
 			// 用整頁最大編號、不用最後一列：不預設畫面列必定遞增。
 			let highest: Int = page.lazy.map(\.index).max() ?? 0
-			guard highest < upperIndex else { break }
+			guard highest < upperIndex else {
+				reachedListingEnd = true
+				break
+			}
 			keys = [.text(Self.listingPageDownKey)]
 		}
-		return collected.values.sorted { $0.index < $1.index }
+		let articles: [PTTArticleSummary] = collected.values.sorted { $0.index < $1.index }
+		return .init(articles: articles, isComplete: reachedListingEnd && Self.isContiguous(articles))
 	}
 
 	/// 送出一串按鍵，然後等到其中一張目標畫面出現。
@@ -270,6 +283,16 @@ public actor PTTSession {
 
 	/// 是否已被 ``close()`` 關閉。
 	private var isClosed = false
+
+	/// 收到的編號是不是連續的一段。
+	///
+	/// !!!: 這是「有沒有漏頁」的免費訊號、不必另外偵測：清單畫面的編號本身連號（判讀端已釘住
+	/// 的不變量），收進來的編號因此也該是連續的一段，中間有洞就是確定漏掉了整頁。頭尾兩端不在
+	/// 判準內——區間過濾本來就會切掉兩端，停在 `upperIndex` 之前也可能只是看板沒那麼多文章。
+	private static func isContiguous(_ articles: [PTTArticleSummary]) -> Bool {
+		guard let first = articles.first, let last = articles.last else { return true }
+		return last.index - first.index + 1 == articles.count
+	}
 
 	/// 啟動快照流的消費（冪等）。
 	///

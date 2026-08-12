@@ -18,9 +18,9 @@ private final class PTTSessionListingTests {
 	@Test
 	private func `a single page covers the whole range`() async throws {
 		let harness: SessionHarness = .init()
-		let result: ResultBox<[PTTArticleSummary]> = .init()
+		let result: ResultBox<PTTArticleListing> = .init()
 		let task: Task<Void, any Error> = harness.run { session in
-			let page: [PTTArticleSummary] = try await session.articles(inBoard: "Test", from: 1022, through: 1027)
+			let page: PTTArticleListing = try await session.articles(inBoard: "Test", from: 1022, through: 1027)
 			result.set(page)
 		}
 		#expect(await harness.waitForSend(count: 1))
@@ -29,7 +29,8 @@ private final class PTTSessionListingTests {
 		harness.yield(TestScreens.articleListing(from: 1022, through: 1027))
 		#expect(await harness.waitForCompletion())
 		try await task.value
-		#expect(result.value?.map(\.index) == Array(1022 ... 1027))
+		#expect(result.value?.articles.map(\.index) == Array(1022 ... 1027))
+		#expect(result.value?.isComplete == true)
 		let jump: [PTTKey] = [.text("1022"), .enter, .formFeed]
 		#expect(harness.sink.batches[1] == jump)
 		#expect(harness.sink.count == 2)
@@ -40,9 +41,9 @@ private final class PTTSessionListingTests {
 	@Test
 	private func `paging continues until the upper bound arrives`() async throws {
 		let harness: SessionHarness = .init()
-		let result: ResultBox<[PTTArticleSummary]> = .init()
+		let result: ResultBox<PTTArticleListing> = .init()
 		let task: Task<Void, any Error> = harness.run { session in
-			let page: [PTTArticleSummary] = try await session.articles(inBoard: "Test", from: 1000, through: 1024)
+			let page: PTTArticleListing = try await session.articles(inBoard: "Test", from: 1000, through: 1024)
 			result.set(page)
 		}
 		#expect(await harness.waitForSend(count: 1))
@@ -53,7 +54,8 @@ private final class PTTSessionListingTests {
 		harness.yield(TestScreens.articleListing(from: 1019, through: 1037))
 		#expect(await harness.waitForCompletion())
 		try await task.value
-		#expect(result.value?.map(\.index) == Array(1000 ... 1024))
+		#expect(result.value?.articles.map(\.index) == Array(1000 ... 1024))
+		#expect(result.value?.isComplete == true)
 		let pageDown: [PTTKey] = [.text(PTTSession.listingPageDownKey), .formFeed]
 		#expect(harness.sink.batches[2] == pageDown)
 		#expect(harness.sink.count == 3)
@@ -64,9 +66,9 @@ private final class PTTSessionListingTests {
 	@Test
 	private func `paging stops once the listing no longer advances`() async throws {
 		let harness: SessionHarness = .init()
-		let result: ResultBox<[PTTArticleSummary]> = .init()
+		let result: ResultBox<PTTArticleListing> = .init()
 		let task: Task<Void, any Error> = harness.run { session in
-			let page: [PTTArticleSummary] = try await session.articles(inBoard: "Test", from: 1000, through: 9999)
+			let page: PTTArticleListing = try await session.articles(inBoard: "Test", from: 1000, through: 9999)
 			result.set(page)
 		}
 		#expect(await harness.waitForSend(count: 1))
@@ -79,7 +81,9 @@ private final class PTTSessionListingTests {
 		}
 		#expect(await harness.waitForCompletion())
 		try await task.value
-		#expect(result.value?.map(\.index) == Array(1000 ... 1005))
+		#expect(result.value?.articles.map(\.index) == Array(1000 ... 1005))
+		// 收在 upperIndex 之前不算不完整：編號連著、清單也真的到底了。
+		#expect(result.value?.isComplete == true)
 		#expect(harness.sink.count == 3 + PTTSession.parseRetryLimit)
 		harness.finish()
 	}
@@ -91,9 +95,9 @@ private final class PTTSessionListingTests {
 	@Test
 	private func `a repeated page is re-read before the listing is called finished`() async throws {
 		let harness: SessionHarness = .init()
-		let result: ResultBox<[PTTArticleSummary]> = .init()
+		let result: ResultBox<PTTArticleListing> = .init()
 		let task: Task<Void, any Error> = harness.run { session in
-			let page: [PTTArticleSummary] = try await session.articles(inBoard: "Test", from: 1000, through: 1011)
+			let page: PTTArticleListing = try await session.articles(inBoard: "Test", from: 1000, through: 1011)
 			result.set(page)
 		}
 		#expect(await harness.waitForSend(count: 1))
@@ -106,7 +110,8 @@ private final class PTTSessionListingTests {
 		harness.yield(TestScreens.articleListing(from: 1006, through: 1011))
 		#expect(await harness.waitForCompletion())
 		try await task.value
-		#expect(result.value?.map(\.index) == Array(1000 ... 1011))
+		#expect(result.value?.articles.map(\.index) == Array(1000 ... 1011))
+		#expect(result.value?.isComplete == true)
 		// 重讀那一批只有重繪鍵：翻頁鍵混進來就真的跳過一頁了。
 		let redrawOnly: [PTTKey] = [.formFeed]
 		#expect(harness.sink.batches[3] == redrawOnly)
@@ -149,9 +154,9 @@ private final class PTTSessionListingTests {
 	@Test
 	private func `articles outside the range are filtered out`() async throws {
 		let harness: SessionHarness = .init()
-		let result: ResultBox<[PTTArticleSummary]> = .init()
+		let result: ResultBox<PTTArticleListing> = .init()
 		let task: Task<Void, any Error> = harness.run { session in
-			let page: [PTTArticleSummary] = try await session.articles(inBoard: "Test", from: 1003, through: 1005)
+			let page: PTTArticleListing = try await session.articles(inBoard: "Test", from: 1003, through: 1005)
 			result.set(page)
 		}
 		#expect(await harness.waitForSend(count: 1))
@@ -160,17 +165,68 @@ private final class PTTSessionListingTests {
 		harness.yield(TestScreens.articleListing(from: 1000, through: 1010))
 		#expect(await harness.waitForCompletion())
 		try await task.value
-		#expect(result.value?.map(\.index) == Array(1003 ... 1005))
+		#expect(result.value?.articles.map(\.index) == Array(1003 ... 1005))
+		// 區間過濾切掉兩端不算漏頁。
+		#expect(result.value?.isComplete == true)
 		harness.finish()
 	}
 
-	/// 看板一篇文章也沒有時回空陣列，不是錯誤。
+	/// 收到的編號中間有洞時標成不完整，已收到的部分照樣附上。
+	///
+	/// !!!: 清單編號連號，中間有洞就是確定漏掉了整頁——這是免費訊號、不必另外偵測。
+	@Test
+	private func `a gap in the collected indexes marks the listing incomplete`() async throws {
+		let harness: SessionHarness = .init()
+		let result: ResultBox<PTTArticleListing> = .init()
+		let task: Task<Void, any Error> = harness.run { session in
+			let page: PTTArticleListing = try await session.articles(inBoard: "Test", from: 1000, through: 1015)
+			result.set(page)
+		}
+		#expect(await harness.waitForSend(count: 1))
+		harness.yield(TestScreens.inBoard)
+		#expect(await harness.waitForSend(count: 2))
+		harness.yield(TestScreens.articleListing(from: 1000, through: 1005))
+		#expect(await harness.waitForSend(count: 3))
+		harness.yield(TestScreens.articleListing(from: 1010, through: 1015))
+		#expect(await harness.waitForCompletion())
+		try await task.value
+		#expect(result.value?.articles.map(\.index) == Array(1000 ... 1005) + Array(1010 ... 1015))
+		#expect(result.value?.isComplete == false)
+		harness.finish()
+	}
+
+	/// 翻頁次數用盡時標成不完整，不與「清單就這麼多」混為一談。
+	@Test
+	private func `exhausting the page budget marks the listing incomplete`() async throws {
+		let harness: SessionHarness = .init()
+		let result: ResultBox<PTTArticleListing> = .init()
+		let task: Task<Void, any Error> = harness.run { session in
+			let page: PTTArticleListing = try await session.articles(inBoard: "Test", from: 1000, through: 9999)
+			result.set(page)
+		}
+		#expect(await harness.waitForSend(count: 1))
+		harness.yield(TestScreens.inBoard)
+		for page in 0 ..< PTTSession.maximumListingPages {
+			#expect(await harness.waitForSend(count: page + 2))
+			let lower: Int = 1000 + page * 6
+			harness.yield(TestScreens.articleListing(from: lower, through: lower + 5))
+		}
+		#expect(await harness.waitForCompletion())
+		try await task.value
+		#expect(result.value?.articles.count == PTTSession.maximumListingPages * 6)
+		#expect(result.value?.isComplete == false)
+		// 翻頁上限用盡就停手，不會多送一次翻頁鍵。
+		#expect(harness.sink.count == PTTSession.maximumListingPages + 1)
+		harness.finish()
+	}
+
+	/// 看板一篇文章也沒有時回空清單，不是錯誤。
 	@Test
 	private func `an empty board yields no articles`() async throws {
 		let harness: SessionHarness = .init()
-		let result: ResultBox<[PTTArticleSummary]> = .init()
+		let result: ResultBox<PTTArticleListing> = .init()
 		let task: Task<Void, any Error> = harness.run { session in
-			let page: [PTTArticleSummary] = try await session.articles(inBoard: "Test", from: 1, through: 10)
+			let page: PTTArticleListing = try await session.articles(inBoard: "Test", from: 1, through: 10)
 			result.set(page)
 		}
 		#expect(await harness.waitForSend(count: 1))
@@ -179,7 +235,8 @@ private final class PTTSessionListingTests {
 		harness.yield(TestScreens.emptyBoard)
 		#expect(await harness.waitForCompletion())
 		try await task.value
-		#expect(result.value?.isEmpty == true)
+		#expect(result.value?.articles.isEmpty == true)
+		#expect(result.value?.isComplete == true)
 		harness.finish()
 	}
 
@@ -187,9 +244,9 @@ private final class PTTSessionListingTests {
 	@Test
 	private func `an unreadable page is retried without paging past it`() async throws {
 		let harness: SessionHarness = .init()
-		let result: ResultBox<[PTTArticleSummary]> = .init()
+		let result: ResultBox<PTTArticleListing> = .init()
 		let task: Task<Void, any Error> = harness.run { session in
-			let page: [PTTArticleSummary] = try await session.articles(inBoard: "Test", from: 1000, through: 1002)
+			let page: PTTArticleListing = try await session.articles(inBoard: "Test", from: 1000, through: 1002)
 			result.set(page)
 		}
 		#expect(await harness.waitForSend(count: 1))
@@ -200,7 +257,8 @@ private final class PTTSessionListingTests {
 		harness.yield(TestScreens.articleListing(from: 1000, through: 1002))
 		#expect(await harness.waitForCompletion())
 		try await task.value
-		#expect(result.value?.map(\.index) == Array(1000 ... 1002))
+		#expect(result.value?.articles.map(\.index) == Array(1000 ... 1002))
+		#expect(result.value?.isComplete == true)
 		// 重試那一批只有重繪鍵，翻頁鍵不能混進來——翻過去就漏掉這一頁了。
 		let redrawOnly: [PTTKey] = [.formFeed]
 		#expect(harness.sink.batches[2] == redrawOnly)
