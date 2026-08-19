@@ -27,6 +27,12 @@ import PTTTerminal
 ///
 /// **觀察方式**：actor + 快照流，不用物件對物件的觀察機制（會踩上一次性追蹤、
 /// 重建與保留環三個坑）。
+///
+/// **一次只服務一個操作**：actor 只保證單步互斥，每個 `await` 都是插入點——一個橫跨
+/// 數十次來回的操作在等畫面時，另一個呼叫可以把畫面帶去別的地方，兩邊收到的都是對方
+/// 造成的畫面。因此每個會驅動畫面的公開操作進入時先取一面忙碌旗標，旗標已被持有時
+/// 立刻丟 ``PTTSessionError/operationInProgress``。**不排隊**：要序列化請由呼叫端自己
+/// 安排順序，或一條連線配一個 Session。``close()`` 與 ``currentScreen`` 不受此限。
 public actor PTTSession {
 
 	// MARK: Public
@@ -78,8 +84,10 @@ public actor PTTSession {
 	public func logIn(userIdentifier: String, password: String) async throws {
 		let identifier: String = PTTScreenText.trimmed(String(userIdentifier.prefix(Self.maximumIdentifierLength)))
 		let secret: String = PTTScreenText.trimmed(String(password.prefix(Self.maximumPasswordLength)))
+		try beginOperation()
+		defer { endOperation() }
 		guard !identifier.isEmpty, !secret.isEmpty else { throw PTTSessionError.emptyCredentials }
-		_ = try await send(
+		_ = try await performSend(
 			[.text(identifier), .enter, .text(secret), .enter],
 			awaiting: [PTTTargetTable.mainMenu],
 			timeout: Self.loginTimeout
@@ -91,9 +99,11 @@ public actor PTTSession {
 	/// 做法是進板後跳到清單末端（`1` + Enter 定位第一篇、`$` 跳最後一篇），
 	/// 再由 ``ArticleIndexScanner`` 判讀編號欄。判讀失敗會重取畫面重試。
 	public func newestIndex(ofBoard board: String) async throws -> Int {
+		try beginOperation()
+		defer { endOperation() }
 		try await goToBoard(board)
 		for _ in 0 ... Self.parseRetryLimit {
-			let target: PTTScreenTarget = try await send(
+			let target: PTTScreenTarget = try await performSend(
 				[.text("1"), .enter, .text("$")],
 				awaiting: [PTTTargetTable.emptyBoard, PTTTargetTable.inBoard],
 				timeout: Self.standardTimeout
@@ -126,6 +136,8 @@ public actor PTTSession {
 		from lowerIndex: Int,
 		through upperIndex: Int
 	) async throws -> PTTArticleListing {
+		try beginOperation()
+		defer { endOperation() }
 		guard lowerIndex >= 1, lowerIndex <= upperIndex else { throw PTTSessionError.invalidIndexRange }
 		try await goToBoard(board)
 		var collected: [Int: PTTArticleSummary] = [:]
@@ -140,7 +152,7 @@ public actor PTTSession {
 		var pages = 0
 		// 迴圈的界在三個計數器上：翻頁到上限、判讀連敗到上限（丟錯）、停滯連續到上限（收手）。
 		while pages < Self.maximumListingPages {
-			let target: PTTScreenTarget = try await send(
+			let target: PTTScreenTarget = try await performSend(
 				keys,
 				awaiting: [PTTTargetTable.emptyBoard, PTTTargetTable.inBoard],
 				timeout: Self.standardTimeout
@@ -203,14 +215,16 @@ public actor PTTSession {
 		awaiting targets: [PTTScreenTarget],
 		timeout: Duration
 	) async throws -> PTTScreenTarget {
-		try startPump()
-		let generation: Int = try await sendKeys(keys)
-		return try await wait(for: targets, after: generation, timeout: timeout)
+		try beginOperation()
+		defer { endOperation() }
+		return try await performSend(keys, awaiting: targets, timeout: timeout)
 	}
 
 	/// 不送鍵、直接等目標畫面（站方主動送出的畫面，例如剛連上時的進站畫面）。
 	@discardableResult
 	public func waitFor(_ targets: [PTTScreenTarget], timeout: Duration) async throws -> PTTScreenTarget {
+		try beginOperation()
+		defer { endOperation() }
 		try startPump()
 		return try await wait(for: targets, after: 0, timeout: timeout)
 	}
@@ -284,6 +298,9 @@ public actor PTTSession {
 	/// 是否已被 ``close()`` 關閉。
 	private var isClosed = false
 
+	/// 是否有操作正在進行中（見型別註解「一次只服務一個操作」）。
+	private var isPerformingOperation: Bool = false
+
 	/// 收到的編號是不是連續的一段。
 	///
 	/// !!!: 這是「有沒有漏頁」的免費訊號、不必另外偵測：清單畫面的編號本身連號（判讀端已釘住
@@ -319,6 +336,38 @@ public actor PTTSession {
 	/// 標記快照流已結束。
 	private func markStreamFinished() {
 		isStreamFinished = true
+	}
+
+	/// 取下忙碌旗標，取不到就丟錯。
+	///
+	/// !!!: 檢查與設定之間沒有 `await`，所以在 actor 上是原子的——這正是這面旗標唯一
+	/// 需要成立的性質。加了 `await` 就等於把要防的插入點開回來。
+	///
+	/// 非 `private`：`PTTSession+ArticleContent.swift` 的公開操作同樣要在入口取旗標。
+	func beginOperation() throws {
+		guard !isPerformingOperation else { throw PTTSessionError.operationInProgress }
+		isPerformingOperation = true
+	}
+
+	/// 放掉忙碌旗標。呼叫端一律以 `defer` 配對，操作丟錯時也要放。
+	///
+	/// 非 `private`：同 ``beginOperation()``。
+	func endOperation() {
+		isPerformingOperation = false
+	}
+
+	/// ``send(_:awaiting:timeout:)`` 的本體，不碰忙碌旗標。
+	///
+	/// 非 `private`：公開操作已經在入口取過旗標，內部再走公開版就會被自己的旗標擋下；
+	/// `PTTSession+ArticleContent.swift` 的逐頁讀取同樣走這裡。
+	func performSend(
+		_ keys: [PTTKey],
+		awaiting targets: [PTTScreenTarget],
+		timeout: Duration
+	) async throws -> PTTScreenTarget {
+		try startPump()
+		let generation: Int = try await sendKeys(keys)
+		return try await wait(for: targets, after: generation, timeout: timeout)
 	}
 
 	/// 過節流閘送出一串按鍵，尾端補上重繪鍵；回傳送出前最後一刻的畫面世代。
@@ -411,7 +460,7 @@ public actor PTTSession {
 		keys.append(.text(board))
 		keys.append(.enter)
 		keys.append(contentsOf: repeatElement(PTTKey.interrupt, count: 5))
-		let target: PTTScreenTarget = try await send(
+		let target: PTTScreenTarget = try await performSend(
 			keys,
 			awaiting: [PTTTargetTable.inBoard, PTTTargetTable.mainMenuExiting],
 			timeout: Self.standardTimeout

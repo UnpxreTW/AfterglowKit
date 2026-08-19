@@ -196,6 +196,41 @@ private final class PTTSessionTests {
 		harness.finish()
 	}
 
+	/// 前一個操作還在等畫面時，第二個操作立刻被擋下、一顆鍵都不多送。
+	@Test
+	private func `a second operation is rejected while another is in flight`() async throws {
+		let harness: SessionHarness = .init()
+		let task: Task<Void, any Error> = harness.run { session in
+			try await session.logIn(userIdentifier: "dreamer", password: "secret")
+		}
+		#expect(await harness.waitForSend(count: 1))
+		await #expect(throws: PTTSessionError.operationInProgress) {
+			_ = try await harness.session.newestIndex(ofBoard: "Test")
+		}
+		#expect(harness.sink.count == 1)
+		harness.yield(TestScreens.mainMenu)
+		#expect(await harness.waitForCompletion())
+		try await task.value
+		harness.finish()
+	}
+
+	/// 前一個操作以丟錯收場時忙碌旗標照樣放掉，下一個操作走得下去。
+	@Test
+	private func `the busy flag is released when an operation throws`() async throws {
+		let harness: SessionHarness = .init()
+		await #expect(throws: PTTSessionError.emptyCredentials) {
+			try await harness.session.logIn(userIdentifier: "   ", password: "secret")
+		}
+		let task: Task<Void, any Error> = harness.run { session in
+			try await session.logIn(userIdentifier: "dreamer", password: "secret")
+		}
+		#expect(await harness.waitForSend(count: 1))
+		harness.yield(TestScreens.mainMenu)
+		#expect(await harness.waitForCompletion())
+		try await task.value
+		harness.finish()
+	}
+
 	/// 固定控制序列的位元組：Enter／重繪／中斷／方向鍵；字面文字不在此層決定編碼。
 	@Test
 	private func `control keys carry fixed byte sequences`() {

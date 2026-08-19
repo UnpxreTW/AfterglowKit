@@ -20,6 +20,10 @@ public enum PTTSessionError: Error, Equatable {
 	/// Session 已被 ``PTTSession/close()`` 關閉。
 	case closed
 
+	/// 已經有一個操作正在進行中——同一個 Session 一次只服務一個操作，第二個進入者
+	/// 立刻收到這個錯誤、不排隊（見 ``PTTSession`` 型別註解）。
+	case operationInProgress
+
 	/// 帳號或密碼為空（去除前後空白、截斷長度之後）。
 	case emptyCredentials
 
