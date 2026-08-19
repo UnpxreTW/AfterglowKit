@@ -43,11 +43,20 @@ public enum ArticleListingScanner {
 	/// 需要重建的列多過這個數量，那就不是游標造成的，而是這張畫面根本不是同一頁。
 	public static let cursorAffectedRowLimit = 2
 
+	/// 承認整頁編號基準所需的「原樣相符」列數。
+	///
+	/// 基準取自各列各自推出來的起始編號裡最大的那個，而定義基準的那一列必然與基準相符——
+	/// 那是算式的結果、不是佐證。故要求**另有一列**原樣相符，合計兩列，基準才算被畫面自己
+	/// 證實過。少於這個數量就整頁作廢：只有一列判讀得出來時，該列若被游標記號蓋掉，基準就是
+	/// 被蓋掉之後那個值本身，既不會被改寫也不會被擋下，直接交出錯編號。
+	public static let corroboratedRowCount = 2
+
 	/// 判讀整張畫面上所有能認出來的文章列（依畫面由上而下，即編號遞增）。
 	///
 	/// 認不出編號的列（置底文、空白列、殘影）直接略過——清單畫面本來就混著這些東西，
-	/// 略過它們是正常判讀的一部分，不是失敗。整張畫面一列都認不出來才由呼叫端當作
-	/// 判讀失敗處理。
+	/// 略過它們是正常判讀的一部分，不是失敗。認得出來的列**少於
+	/// ``corroboratedRowCount`` 列**時整張畫面回空陣列，由呼叫端當作判讀失敗處理：
+	/// 那樣的畫面湊不出足以檢驗編號基準的資訊（見 ``corroboratedRowCount``）。
 	///
 	/// **本函式假設整頁的文章列連號遞增**，一般看板清單畫面即是如此（置底文印星號、沒有編號，
 	/// 而且只出現在整份清單的最後）。判讀出來的列會據此過一次校準，把被游標記號蓋掉的編號位數
@@ -120,15 +129,21 @@ public enum ArticleListingScanner {
 	/// 列數**。少了後面這道，兩頁位數不同但同餘的畫面會整片通過——例如舊頁 2345 起、新頁 12345
 	/// 起，逐列都「差一位且是後綴」，於是整批舊列被貼上新頁的編號交出去，正好是這裡最該擋的事。
 	/// 對不上就整頁作廢回空陣列、由呼叫端重取；少收一段還看得出來，收到張冠李戴的編號看不出來。
+	///
+	/// !!!: 前兩道判準管的是「被改寫的列可不可信」，**基準本身可不可信是第三道**——原樣相符的列
+	/// 要有 ``corroboratedRowCount`` 列，否則整頁作廢。少了這道，單列頁與幾乎整片重建的畫面
+	/// 都由一列自己說了算，而那一列正是可能被游標蓋掉的那列。
 	private static func restoringIndices(of page: [PTTArticleSummary]) -> [PTTArticleSummary] {
 		let candidates: [Int] = page.enumerated().map { $0.element.index - $0.offset }
 		guard let base: Int = candidates.max() else { return page }
 		var restored: [PTTArticleSummary] = []
 		restored.reserveCapacity(page.count)
 		var rebuilt = 0
+		var matched: Int = 0
 		for (offset, article) in page.enumerated() {
 			let index: Int = base + offset
 			if index == article.index {
+				matched += 1
 				restored.append(article)
 				continue
 			}
@@ -136,6 +151,7 @@ public enum ArticleListingScanner {
 			guard rebuilt <= cursorAffectedRowLimit, isTruncation(article.index, of: index) else { return [] }
 			restored.append(article.replacingIndex(with: index))
 		}
+		guard matched >= corroboratedRowCount else { return [] }
 		return restored
 	}
 
