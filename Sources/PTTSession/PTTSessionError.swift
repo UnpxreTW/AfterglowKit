@@ -21,7 +21,7 @@ public enum PTTSessionError: Error, Equatable {
 	case closed
 
 	/// 已經有一個操作正在進行中——同一個 Session 一次只服務一個操作，第二個進入者
-	/// 立刻收到這個錯誤、不排隊（見 ``PTTSession`` 型別註解）。
+	/// 立即收到這個錯誤、不排隊（見 ``PTTSession`` 型別註解）。
 	case operationInProgress
 
 	/// 帳號或密碼為空（去除前後空白、截斷長度之後）。
@@ -45,7 +45,7 @@ public enum PTTSessionError: Error, Equatable {
 	/// 要求的編號區間不成立（起點小於 1，或起點大於終點）。
 	case invalidIndexRange
 
-	/// 連續重試後仍讀不到文章的任何一頁（footer 行號區間或畫面列合併皆判讀失敗），
+	/// 連續重試後仍無法讀到文章的任何一頁（footer 行號區間或畫面列合併皮判讀失敗），
 	/// 且尚未成功收到過任何一頁——已收到至少一頁時改回傳部分結果並標不完整，
 	/// 不丟這個錯誤（見 ``PTTArticleContent/isComplete``）。
 	case articleReadFailed(board: String, index: Int)
