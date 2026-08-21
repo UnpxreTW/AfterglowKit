@@ -99,7 +99,8 @@ let package = Package(
 		),
 		.testTarget(
 			name: "PTTTerminalTests",
-			dependencies: ["PTTTerminal"],
+			// 欄寬釘樁測試餵的是真 Big5 位元組，需走完整條轉碼管線；正式 target 的分層未受影響。
+			dependencies: ["PTTBig5Codec", "PTTTerminal"],
 			plugins: [
 				.plugin(name: "SwiftStyleLint", package: "SwiftStyleKit"),
 			]
