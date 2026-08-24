@@ -34,6 +34,8 @@ extension PTTSession {
 	/// 第一頁都判讀不出來才丟 ``PTTSessionError/articleReadFailed(board:index:)``——
 	/// 已經收到至少一頁時一律回傳部分結果，不把已收到的資料吞掉。
 	public func articleContent(inBoard board: String, at index: Int) async throws -> PTTArticleContent {
+		try beginOperation()
+		defer { endOperation() }
 		try await goToBoard(board)
 		let opening: PTTScreenTarget = try await requestArticlePage([.text(String(index)), .enter, .enter])
 		if let animation = try await animationContent(for: opening) { return animation }
@@ -79,7 +81,7 @@ extension PTTSession {
 
 	/// 送出鍵、等到內文頁或動畫 prompt 之一——``articleContent(inBoard:at:)`` 逐頁讀取的共用入口。
 	private func requestArticlePage(_ keys: [PTTKey]) async throws -> PTTScreenTarget {
-		try await send(keys, awaiting: Self.articleAwaitingTargets, timeout: Self.standardTimeout)
+		try await performSend(keys, awaiting: Self.articleAwaitingTargets, timeout: Self.standardTimeout)
 	}
 
 	/// 命中動畫偵測 prompt 時的收尾：送出對應的婉拒鍵、回傳標成動畫的內容；

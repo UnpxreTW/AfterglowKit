@@ -27,10 +27,15 @@ private final class ArticleListingScannerTests {
 	/// 底部功能列。
 	private static let footer: [String] = ["文章選讀  (y)回應(X%)推文(h)說明(←)離開"]
 
-	/// 由單一列組出一張畫面、判讀該列。
+	/// 由單一列組出畫面上的那一列格子、判讀該列。
+	///
+	/// !!!: 逐欄判讀走 ``ArticleListingScanner/summary(in:)`` 這個單列入口、不繞
+	/// ``ArticleListingScanner/summaries(in:)``：後者還要檢驗整頁的編號基準，而基準需要
+	/// 兩列原樣相符才承認（見 ``ArticleListingScanner/corroboratedRowCount``），單列畫面
+	/// 一律回空陣列。欄位切法與基準檢驗是兩件事，各測各的。
 	private static func summary(ofRow row: String) -> PTTArticleSummary? {
 		let screen: PTTScreen = makeScreen(header + [row] + footer)
-		return ArticleListingScanner.summaries(in: screen).first
+		return ArticleListingScanner.summary(in: screen.rows[header.count])
 	}
 
 	/// 一般列：游標列、個位數推文、五欄日期、十二字作者、一般類別記號。
@@ -140,12 +145,12 @@ private final class ArticleListingScannerTests {
 	private func `pinned rows are skipped`() {
 		let screen: PTTScreen = makeScreen(
 			Self.header
-				+ [TestScreens.articleRow(index: 9458)]
+				+ [TestScreens.articleRow(index: 9458), TestScreens.articleRow(index: 9459)]
 				+ ["    ★  m爆 2/14 ubcs         □ [公告] 板規公告"]
 				+ Self.footer
 		)
 		let summaries: [PTTArticleSummary] = ArticleListingScanner.summaries(in: screen)
-		#expect(summaries.map(\.index) == [9458])
+		#expect(summaries.map(\.index) == [9458, 9459])
 	}
 
 	/// 表頭不參與判讀。
@@ -154,9 +159,9 @@ private final class ArticleListingScannerTests {
 		var header: [String] = Self.header
 		header[0] = TestScreens.articleRow(index: 9999, title: "表頭不該被當成文章")
 		let screen: PTTScreen = makeScreen(
-			header + [TestScreens.articleRow(index: 1022)] + Self.footer
+			header + (1022 ... 1023).map { TestScreens.articleRow(index: $0) } + Self.footer
 		)
-		#expect(ArticleListingScanner.summaries(in: screen).map(\.index) == [1022])
+		#expect(ArticleListingScanner.summaries(in: screen).map(\.index) == [1022, 1023])
 	}
 
 	/// 底部功能列不參與判讀。
@@ -170,8 +175,9 @@ private final class ArticleListingScannerTests {
 			lines[offset] = line
 		}
 		lines[Self.header.count] = TestScreens.articleRow(index: 1022)
+		lines[Self.header.count + 1] = TestScreens.articleRow(index: 1023)
 		lines[PTTTerminal.rows - 1] = TestScreens.articleRow(index: 8888, title: "功能列不該被當成文章")
-		#expect(ArticleListingScanner.summaries(in: makeScreen(lines)).map(\.index) == [1022])
+		#expect(ArticleListingScanner.summaries(in: makeScreen(lines)).map(\.index) == [1022, 1023])
 	}
 
 	/// 游標記號蓋掉編號欄最左邊兩欄時，用整頁的連號關係把位數補回來。
@@ -195,10 +201,12 @@ private final class ArticleListingScannerTests {
 		let screen: PTTScreen = makeScreen(
 			Self.header
 				+ [TestScreens.articleRow(index: 1_234_567, cursorColumns: 1)]
-				+ [TestScreens.articleRow(index: 1_234_568)]
+				+ (1_234_568 ... 1_234_569).map { TestScreens.articleRow(index: $0) }
 				+ Self.footer
 		)
-		#expect(ArticleListingScanner.summaries(in: screen).map(\.index) == [1_234_567, 1_234_568])
+		#expect(
+			ArticleListingScanner.summaries(in: screen).map(\.index) == Array(1_234_567 ... 1_234_569)
+		)
 	}
 
 	/// 缺太多位就不是游標蓋出來的——後綴對得上也不重建，整頁作廢。
@@ -240,6 +248,47 @@ private final class ArticleListingScannerTests {
 		#expect(ArticleListingScanner.summaries(in: screen).isEmpty)
 	}
 
+	/// 只判讀得出一列、而那一列被游標記號蓋掉時整頁作廢——不拿被蓋掉的值當整頁基準。
+	///
+	/// !!!: 這是最難察覺的一種壞法：整頁只有一列，基準就取自它自己，於是「補回位數」那道
+	/// 判準永遠不會啟動，一個被蓋掉之後仍然合法的數字直接被當成真編號交出去。畫面上沒有
+	/// 任何東西能反駁它，所以不猜。
+	@Test
+	private func `a single row page is discarded when the base cannot be corroborated`() {
+		let screen: PTTScreen = makeScreen(
+			Self.header + [TestScreens.articleRow(index: 781_508, cursorColumns: 2)] + Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).isEmpty)
+	}
+
+	/// 只判讀得出一列時一律作廢，編號看起來再正常也一樣。
+	///
+	/// !!!: 判準是「基準有沒有旁證」，不是「這個編號像不像被蓋過」——畫面上分不出
+	/// 「本來就短」與「被蓋掉之後剛好變短」，所以兩者同樣不承認。代價是只有一篇文章的
+	/// 看板讀不出來，換掉的是「安靜地回一個錯編號」。
+	@Test
+	private func `a single row page is discarded even when the index looks intact`() {
+		let screen: PTTScreen = makeScreen(
+			Self.header + [TestScreens.articleRow(index: 42)] + Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).isEmpty)
+	}
+
+	/// 幾乎整片都要重建、只剩基準那一列原樣相符時整頁作廢。
+	///
+	/// !!!: 重建的列數還在游標蓋得到的範圍內（兩列），後綴與位數兩道判準也都過得了關——
+	/// 擋下這張畫面的只有「基準要有旁證」這一道。
+	@Test
+	private func `a page rebuilt down to its base row alone is discarded`() {
+		let screen: PTTScreen = makeScreen(
+			Self.header
+				+ (781_508 ... 781_509).map { TestScreens.articleRow(index: $0, cursorColumns: 2) }
+				+ [TestScreens.articleRow(index: 781_510)]
+				+ Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).isEmpty)
+	}
+
 	/// 整張畫面沒有任何文章列時回空陣列（呼叫端據此重取畫面）。
 	@Test
 	private func `a listing without any article row reads as empty`() {
@@ -252,5 +301,55 @@ private final class ArticleListingScannerTests {
 	private func `rows come back in screen order`() {
 		let screen: PTTScreen = makeScreen(TestScreens.articleListing(from: 1022, through: 1027))
 		#expect(ArticleListingScanner.summaries(in: screen).map(\.index) == Array(1022 ... 1027))
+	}
+
+	/// 一列的日期欄不成形狀就整張畫面作廢——**不是**只略過那一列。
+	///
+	/// !!!: 這條釘的是處置方式、不是判斷式。把整頁作廢改成逐列略過，其餘每一條測試照樣會過，
+	/// 呼叫端卻會收到「四列看起來很正常」的一頁——而那一頁的欄位切點其實已經對不上了。
+	@Test
+	private func `a row with a malformed date discards the whole screen`() {
+		let screen: PTTScreen = makeScreen(
+			Self.header
+				+ (1022 ... 1025).map { TestScreens.articleRow(index: $0) }
+				+ [TestScreens.articleRow(index: 1026, date: "ab/cd")]
+				+ Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).isEmpty)
+	}
+
+	/// 日期欄整欄空白是站方的合法值（`char date[6]` 的欄位註解自寫「`or space(5)`」），照常判讀。
+	///
+	/// !!!: 這一種若沒收進驗證集，畫面本身是好的、重取幾次都一樣，於是整段讀取以判讀失敗
+	/// 收場——形狀驗證漏收合法值的代價不是變嚴，是永遠好不了。
+	@Test
+	private func `a blank date column is accepted`() throws {
+		let summary: PTTArticleSummary = try #require(
+			Self.summary(ofRow: TestScreens.articleRow(index: 1022, date: "     "))
+		)
+		#expect(summary.index == 1022)
+		#expect(summary.date == "")
+		#expect(summary.author == "alice")
+	}
+
+	/// 站方 `%2d/%02d` 印得出來的兩端值都認得。
+	@Test(arguments: [" 1/01", "12/31", " 8/09", "02/02"])
+	private func `dates the station can print are accepted`(date: String) throws {
+		let summary: PTTArticleSummary = try #require(
+			Self.summary(ofRow: TestScreens.articleRow(index: 1022, date: date))
+		)
+		#expect(summary.index == 1022)
+	}
+
+	/// 站方印不出來的日期一律不收：月日超界、日只有一位、帶正負號、非數字、缺斜線。
+	///
+	/// !!!: `+1/09` 這條專門釘住「不能只靠 `Int(_:)` 收尾」——它認得帶號的寫法，
+	/// 而站方的 `%2d/%02d` 印不出這種東西。
+	@Test(arguments: ["13/01", " 0/09", " 8/00", " 8/32", " 8/9 ", "+1/09", "ab/cd", "  809"])
+	private func `dates the station cannot print are rejected`(date: String) {
+		let screen: PTTScreen = makeScreen(
+			Self.header + [TestScreens.articleRow(index: 1022, date: date)] + Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).isEmpty)
 	}
 }
