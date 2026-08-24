@@ -302,4 +302,54 @@ private final class ArticleListingScannerTests {
 		let screen: PTTScreen = makeScreen(TestScreens.articleListing(from: 1022, through: 1027))
 		#expect(ArticleListingScanner.summaries(in: screen).map(\.index) == Array(1022 ... 1027))
 	}
+
+	/// 一列的日期欄不成形狀就整張畫面作廢——**不是**只略過那一列。
+	///
+	/// !!!: 這條釘的是處置方式、不是判斷式。把整頁作廢改成逐列略過，其餘每一條測試照樣會過，
+	/// 呼叫端卻會收到「四列看起來很正常」的一頁——而那一頁的欄位切點其實已經對不上了。
+	@Test
+	private func `a row with a malformed date discards the whole screen`() {
+		let screen: PTTScreen = makeScreen(
+			Self.header
+				+ (1022 ... 1025).map { TestScreens.articleRow(index: $0) }
+				+ [TestScreens.articleRow(index: 1026, date: "ab/cd")]
+				+ Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).isEmpty)
+	}
+
+	/// 日期欄整欄空白是站方的合法值（`char date[6]` 的欄位註解自寫「`or space(5)`」），照常判讀。
+	///
+	/// !!!: 這一種若沒收進驗證集，畫面本身是好的、重取幾次都一樣，於是整段讀取以判讀失敗
+	/// 收場——形狀驗證漏收合法值的代價不是變嚴，是永遠好不了。
+	@Test
+	private func `a blank date column is accepted`() throws {
+		let summary: PTTArticleSummary = try #require(
+			Self.summary(ofRow: TestScreens.articleRow(index: 1022, date: "     "))
+		)
+		#expect(summary.index == 1022)
+		#expect(summary.date == "")
+		#expect(summary.author == "alice")
+	}
+
+	/// 站方 `%2d/%02d` 印得出來的兩端值都認得。
+	@Test(arguments: [" 1/01", "12/31", " 8/09", "02/02"])
+	private func `dates the station can print are accepted`(date: String) throws {
+		let summary: PTTArticleSummary = try #require(
+			Self.summary(ofRow: TestScreens.articleRow(index: 1022, date: date))
+		)
+		#expect(summary.index == 1022)
+	}
+
+	/// 站方印不出來的日期一律不收：月日超界、日只有一位、帶正負號、非數字、缺斜線。
+	///
+	/// !!!: `+1/09` 這條專門釘住「不能只靠 `Int(_:)` 收尾」——它認得帶號的寫法，
+	/// 而站方的 `%2d/%02d` 印不出這種東西。
+	@Test(arguments: ["13/01", " 0/09", " 8/00", " 8/32", " 8/9 ", "+1/09", "ab/cd", "  809"])
+	private func `dates the station cannot print are rejected`(date: String) {
+		let screen: PTTScreen = makeScreen(
+			Self.header + [TestScreens.articleRow(index: 1022, date: date)] + Self.footer
+		)
+		#expect(ArticleListingScanner.summaries(in: screen).isEmpty)
+	}
 }
