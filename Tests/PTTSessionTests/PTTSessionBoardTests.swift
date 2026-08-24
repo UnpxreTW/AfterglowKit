@@ -111,6 +111,59 @@ private final class PTTSessionBoardTests {
 		harness.finish()
 	}
 
+	/// 板名形狀不合法時一顆鍵都不送——它是進板路徑上呼叫端字串直接變成按鍵的入口。
+	///
+	/// !!!: 這一則釘的是「沒送出去」而不是「丟了錯」。只斷言錯誤的話，先把板名送出去
+	/// 再回報失敗的實作也會通過，而那正是本檢查要擋的事。
+	///
+	/// !!!: 先收掉快照流、再讓假時鐘推到操作結束。檢查若不存在，這一句會往下走到等畫面
+	/// 那關並以 ``PTTSessionError/screenStreamEnded`` 收場——測試當場紅掉，而不是停在
+	/// 一個永遠不會被推進的等待上。
+	@Test
+	private func `a malformed board name never reaches the station`() async {
+		let malformed: [String] = [
+			"",
+			"Test\u{0003}",
+			"Test\rqs",
+			"Test\n",
+			"Test Board",
+			"測試板",
+			"ThirteenChars"
+		]
+		for name in malformed {
+			let harness: SessionHarness = .init()
+			harness.finish()
+			let task: Task<Void, any Error> = harness.run { session in
+				_ = try await session.newestIndex(ofBoard: name)
+			}
+			#expect(await harness.waitForCompletion())
+			await #expect(throws: PTTSessionError.invalidBoardName(name)) { try await task.value }
+			#expect(harness.sink.count == 0)
+		}
+	}
+
+	/// 白名單容得下站上真的存在的板名形狀：英數混 `_` `-` `.`、長度到上限。
+	///
+	/// !!!: 這一則釘的是「不要判過嚴」。判嚴的失敗從呼叫端看起來與「看板不存在」
+	/// 分不出來，比判鬆更難查。
+	@Test
+	private func `a board name at the shape boundary still gets sent`() async throws {
+		let name: String = "A_b-c.d12345"
+		#expect(name.count == BoardName.maximumLength)
+		let harness: SessionHarness = .init()
+		let task: Task<Void, any Error> = harness.run { session in
+			_ = try await session.newestIndex(ofBoard: name)
+		}
+		#expect(await harness.waitForSend(count: 1))
+		harness.yield(TestScreens.inBoard)
+		#expect(await harness.waitForSend(count: 2))
+		harness.yield(TestScreens.emptyBoard)
+		#expect(await harness.waitForCompletion())
+		try await task.value
+		#expect(harness.sink.batches[0].contains(.text(name)))
+		harness.finish()
+	}
+
 	/// 關閉之後不再受理操作。
 	@Test
 	private func `a closed session refuses further work`() async {
