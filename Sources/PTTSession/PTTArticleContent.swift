@@ -67,10 +67,10 @@ public struct PTTArticleContent: Equatable, Sendable {
 	/// 判成哪一邊**在本屬性非空時**看得出來：判成有的話每一則的 ``PTTComment/sourceIP`` 都非
 	/// `nil`。本屬性為空時無從觀察，不過那種情形整批判定必定是「沒有」，也沒有推文會受影響。
 	///
-	/// - Complexity: 與 ``commentLines`` 的長度成正比，每次存取重跑一次；每次重跑會走過每一列
-	///   **兩趟**（一趟判整篇有沒有位址欄、一趟取欄位），所以與 ``unparsedCommentLineCount``
-	///   兩個屬性各存取一次就是四趟。這裡刻意不把判讀結果存起來：它從 ``commentLines`` 就推導
-	///   得出來，存第二份的代價是兩份有機會不同步。
+	/// - Complexity: 與 ``commentLines`` 的長度成正比，每次存取重跑一次；每次重跑把每一列拆
+	///   **一趟**，整批判定（有沒有位址欄）與逐則取欄位共用那一份結果，所以與
+	///   ``unparsedCommentLineCount`` 兩個屬性各存取一次就是兩趟。這裡刻意不把判讀結果存起來：
+	///   它從 ``commentLines`` 就推導得出來，存第二份的代價是兩份有機會不同步。
 	public var comments: [PTTComment] {
 		ArticleCommentScanner.comments(from: commentLines)
 	}
@@ -86,7 +86,7 @@ public struct PTTArticleContent: Equatable, Sendable {
 	/// 這個數字存在的理由與 ``isComplete`` 同一條：讓型別自己說出「有東西沒收乾淨」，
 	/// 而不是讓呼叫端自己想到要去比兩個陣列的長度差。
 	///
-	/// - Complexity: 成本同 ``comments``（走過每一列兩趟）；兩個屬性各存取一次就是四趟。
+	/// - Complexity: 成本同 ``comments``（每一列拆一趟）；兩個屬性各存取一次就是兩趟。
 	public var unparsedCommentLineCount: Int {
 		commentLines.count - comments.count
 	}

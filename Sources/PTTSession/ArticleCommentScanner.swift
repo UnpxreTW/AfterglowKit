@@ -41,9 +41,14 @@ public enum ArticleCommentScanner {
 	/// 認不出格式的列略過、不中斷整批：交進來的是文章讀取路徑已經分類成推文的那些列，
 	/// 走到這裡還認不出來代表格式模型與站方對不上。呼叫端要察覺這件事，比對「交進來幾列」
 	/// 與「拿回去幾則」的差額即可——本函式不會為了湊數而回半組欄位。
+	///
+	/// - Complexity: 整批只拆一次行——每一列的四段在這裡拆好留用，整批判定與逐則取欄位共用
+	///   同一份結果。逐行呼叫 ``comment(from:sourceIPLogged:)`` 自己拼的話，除了得自己猜有
+	///   沒有位址欄，還會把行拆兩次。
 	public static func comments(from lines: [String]) -> [PTTComment] {
-		let logged: Bool = sourceIPLogged(in: lines)
-		return lines.compactMap { comment(from: $0, sourceIPLogged: logged) }
+		let parsed: [Parts] = lines.compactMap(parts(of:))
+		let logged: Bool = sourceIPLogged(in: parsed)
+		return parsed.compactMap { comment(from: $0, sourceIPLogged: logged) }
 	}
 
 	/// 判讀單一推文原始行；認不出格式時回 `nil`。
@@ -52,20 +57,7 @@ public enum ArticleCommentScanner {
 	///   認不出位址時回 `nil`，不把位址欄的內容默默併進 ``PTTComment/message``。
 	public static func comment(from line: String, sourceIPLogged: Bool) -> PTTComment? {
 		guard let parts: Parts = parts(of: line) else { return nil }
-		var message: Substring = parts.message
-		var sourceIP: String?
-		if sourceIPLogged {
-			guard let address: String = trailingAddress(of: message) else { return nil }
-			message = message.dropLast(address.count)
-			sourceIP = address
-		}
-		return PTTComment(
-			type: parts.type,
-			author: String(parts.author),
-			message: PTTScreenText.trimmed(String(message)),
-			sourceIP: sourceIP,
-			time: String(parts.time)
-		)
+		return comment(from: parts, sourceIPLogged: sourceIPLogged)
 	}
 
 	// MARK: Internal
@@ -93,9 +85,7 @@ public enum ArticleCommentScanner {
 	/// 留在內容尾端。②的觸發條件之一（內容能不能剛好填滿定寬）取決於站方輸入函式的長度語意，
 	/// **未實測、屬推論**。
 	static func sourceIPLogged(in lines: [String]) -> Bool {
-		let messages: [Substring] = lines.compactMap { parts(of: $0)?.message }
-		guard !messages.isEmpty else { return false }
-		return messages.allSatisfy { trailingAddress(of: $0) != nil }
+		sourceIPLogged(in: lines.compactMap(parts(of:)))
 	}
 
 	// MARK: Private
@@ -114,6 +104,33 @@ public enum ArticleCommentScanner {
 
 		/// 時刻段。
 		let time: Substring
+	}
+
+	/// 這批已拆好的推文尾段帶不帶來源位址欄。
+	///
+	/// 判準與成因見收 `[String]` 的那一式；這一式收的是拆好的四段，讓整批判定與逐則取欄位
+	/// 共用同一份拆行結果。
+	private static func sourceIPLogged(in parsed: [Parts]) -> Bool {
+		guard !parsed.isEmpty else { return false }
+		return parsed.allSatisfy { trailingAddress(of: $0.message) != nil }
+	}
+
+	/// 把拆好的四段組成一則推文；判定為有位址欄卻在尾端認不出位址時回 `nil`。
+	private static func comment(from parts: Parts, sourceIPLogged: Bool) -> PTTComment? {
+		var message: Substring = parts.message
+		var sourceIP: String?
+		if sourceIPLogged {
+			guard let address: String = trailingAddress(of: message) else { return nil }
+			message = message.dropLast(address.count)
+			sourceIP = address
+		}
+		return PTTComment(
+			type: parts.type,
+			author: String(parts.author),
+			message: PTTScreenText.trimmed(String(message)),
+			sourceIP: sourceIP,
+			time: String(parts.time)
+		)
 	}
 
 	/// 把一行推文原始行拆成四段；不合站方格式時回 `nil`。
