@@ -82,7 +82,7 @@ private final class PTTPushCountRangeTests {
 	/// 站方值域 `-100 ... 100` 的每一個值都恰好被一格涵蓋一次——不重疊、也不留洞。
 	///
 	/// !!!: 這一則抓的是逐格斷言抓不到的東西。級距邊界寫錯時，多半不是某一格自己看起來不對，
-	/// 而是它與鄰居重疊或中間空一格；分開看每一格都合理，合起來才露餯。
+	/// 而是它與鄰居重疊或中間空一格；分開看每一格都合理，合起來才露餡。
 	@Test
 	private func `every net value the field can hold is covered exactly once`() {
 		let ranges: [ClosedRange<Int>] = Self.numericCases.compactMap(\.range)
