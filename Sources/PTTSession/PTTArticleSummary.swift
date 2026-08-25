@@ -16,6 +16,18 @@
 ///
 /// 置底文（公告）不會出現在這裡：站方在編號欄印星號而非編號，本型別沒有編號可填，
 /// 由 ``ArticleListingScanner`` 略過。
+///
+/// !!!: **已被安全刪除的文章仍然是清單上的一列，而且各欄都合法**——站方認它的依據是作者欄
+/// 整格只有一個 `-`（`mbbsd/bbs.c` 的 `readdoent()`，`ent->owner` 是不是 `"-"`），認出來之後
+/// 類別記號照樣印 `□`＝``PTTArticleKind/normal``，已讀狀態則被寫死成已讀、不查閱讀記錄。
+/// ``PTTArticleKind`` 的型別說明寫著「從清單畫面無法分辨」，這裡補上唯一那個辨識點：
+/// ``author`` 的那個 `-`。判讀端不替呼叫端過濾這種列——它是站方真的印出來的一列。
+///
+/// !!!: 上一段成立的前提是站方編了 `SAFE_ARTICLE_DELETE` 而**沒有**編 `COLORIZED_SAFEDEL`。
+/// 後者會讓 `readdoent()` 走另一條早退路徑、印出完全不同的版面（無推文數欄、記號改成 `╳`），
+/// 那種列不符合 ``ArticleListingScanner`` 的欄位表、會被判成不可用而不是被誤讀。兩個巨集在
+/// 公開樹裡都只有 `#ifdef`（`sample/pttbbs.conf` 的那行是註解掉的），判不出實際站台編了哪些
+/// ——同 ``PTTComment`` 位址欄那類編譯期分支的處置：不猜，把兩種後果都寫明。
 public struct PTTArticleSummary: Equatable, Sendable {
 
 	// MARK: Public
@@ -35,6 +47,8 @@ public struct PTTArticleSummary: Equatable, Sendable {
 	public let date: String
 
 	/// 作者代號（站方欄寬 12 字，超長會被截斷）。
+	///
+	/// 整格只有一個 `-` 時代表這篇已被安全刪除，不是有人叫這個名字（見型別註解）。
 	public let author: String
 
 	/// 類別記號；站方印了本型別未涵蓋的記號時為 `nil`（同 ``mark`` 的處置理由）。
