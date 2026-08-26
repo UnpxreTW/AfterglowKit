@@ -61,6 +61,13 @@ public actor PTTSession {
 	/// 清單畫面的翻頁鍵。
 	public static let listingPageDownKey = "N"
 
+	/// 清單起點編號的上界。
+	///
+	/// 站方把文章編號印在固定七格寬的欄位裡（`mbbsd/bbs.c` 的 `prints("%7d", num)`），
+	/// 本模組的判讀也照著取前七欄（見 ``ArticleListingScanner``）。超過七位數的編號因此
+	/// 讀不回來——與其送出去再判讀失敗，不如在入口就說這個起點不成立。
+	public static let maximumStartingIndex: Int = 9_999_999
+
 	/// 帳號長度上限（站方截斷值）。
 	public static let maximumIdentifierLength = 12
 
@@ -125,6 +132,9 @@ public actor PTTSession {
 	/// 已經讀到過文章之後才出現「沒有文章」的畫面，當成畫面不可信、不當成看板空了，已收到的
 	/// 部分照樣回傳並標成不完整。
 	///
+	/// 起點要落在 1 到 ``maximumStartingIndex`` 之間（它會被原樣打進站方的跳號欄位）；
+	/// 終點不設上界——請求區間超過看板現有文章時，收到多少就是多少。
+	///
 	/// !!!: 收不齊時**不**靜默截斷：翻頁次數用盡、收到的編號中間出現斷洞（＝確定漏掉整頁）、
 	/// 或清單讀到一半冒出「沒有文章」的畫面時，回傳的 ``PTTArticleListing/isComplete`` 為
 	/// `false`，已收到的部分照樣附上。清單停在 `upperIndex` 之前本身不算不完整——請求區間
@@ -141,7 +151,9 @@ public actor PTTSession {
 	) async throws -> PTTArticleListing {
 		try beginOperation()
 		defer { endOperation() }
-		guard lowerIndex >= 1, lowerIndex <= upperIndex else { throw PTTSessionError.invalidIndexRange }
+		guard lowerIndex >= 1, lowerIndex <= Self.maximumStartingIndex, lowerIndex <= upperIndex else {
+			throw PTTSessionError.invalidIndexRange
+		}
 		try await goToBoard(board)
 		var collected: [Int: PTTArticleSummary] = [:]
 		// 迴圈是走到清單盡頭才停的，還是翻頁次數先用完——兩者的結果長得一樣，只有這裡分得出來。
@@ -482,8 +494,13 @@ public actor PTTSession {
 	///
 	/// 尾端連送中斷鍵是為了跳過某些看板的進板動畫；動畫若有「任意鍵」或
 	/// 「互動式動畫播放中」的提示，則由全域攜截表接手。
+	///
+	/// 板名先驗形狀再送（見 ``BoardName``）：它是進板路徑上呼叫端字串直接變成按鍵的入口，
+	/// 形狀不合法時一顆按鍵都不送、直接丟 ``PTTSessionError/invalidBoardName(_:)``。
+	///
 	/// 非 `private`：`PTTSession+ArticleContent.swift` 同樣要先進板才能跳到文章。
 	func goToBoard(_ board: String) async throws {
+		guard BoardName.isValid(board) else { throw PTTSessionError.invalidBoardName(board) }
 		var keys: [PTTKey] = PTTKey.mainMenuReset
 		keys.append(.text("qs"))
 		keys.append(.text(board))
