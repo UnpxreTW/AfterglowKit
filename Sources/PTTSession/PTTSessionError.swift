@@ -36,13 +36,19 @@ public enum PTTSessionError: Error, Equatable {
 	/// 進不了指定看板（看板不存在，或名稱打錯）。
 	case noSuchBoard(String)
 
+	/// 板名形狀不合法（空字串、超過長度上限，或含白名單以外的字元）；一顆按鍵都沒送出。
+	///
+	/// 判準見 ``BoardName``：長度上限與字元白名單取站方 `is_valid_brdname()`。
+	case invalidBoardName(String)
+
 	/// 連續重試後仍無法從清單畫面判讀出最新編號。
 	case indexParseFailed(String)
 
 	/// 連續重試後仍無法從清單畫面判讀出任何一列文章。
 	case listingParseFailed(String)
 
-	/// 要求的編號區間不成立（起點小於 1，或起點大於終點）。
+	/// 要求的編號區間不成立（起點小於 1、起點超過 ``PTTSession/maximumStartingIndex``，
+	/// 或起點大於終點）。終點不設上界——請求區間超過看板現有文章是正常用法。
 	case invalidIndexRange
 
 	/// 連續重試後仍無法讀到文章的任何一頁（footer 行號區間或畫面列合併皮判讀失敗），
