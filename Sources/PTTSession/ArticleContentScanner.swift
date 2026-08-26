@@ -138,7 +138,7 @@ public enum ArticleContentScanner {
 	/// 直接拿去跳過表頭 + 分隔線、不必再另外加一次。
 	///
 	/// !!!: 「末列空白再減一」的判準是「畫面上這一列是不是空白」，推論成因是 pmore 依此
-	/// 決定实際渲染幾列表頭；未經真實帳號連線覆核是否恰好對應站方 `fh.lines` 的內部值——
+	/// 決定實際渲染幾列表頭；未經真實帳號連線覆核是否恰好對應站方 `fh.lines` 的內部值——
 	/// 若判斷錯誤，`mergeContentRows` 的總數比對通常會抓到（見該函式型別註解），不會靜默
 	/// 錯位，但仍屬未證實假設，掛真帳號實測後若有出入，修這裡即可。
 	static func header(in rows: [[PTTCell]]) -> (header: PTTArticleHeader?, skippedRowCount: Int) {
