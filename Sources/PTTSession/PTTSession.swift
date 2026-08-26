@@ -15,11 +15,11 @@ import PTTTerminal
 /// **依賴形狀**：只吃兩個抽象——一條 `PTTScreen` 快照流、一個 ``PTTKeySink``。
 /// 不持有 `PTTTerminal` 或 `PTTConnection` 任何具體型別，組裝由外層負責
 /// （同 `PTTConnection` 引擎只依賴 `PTTTransport` 協定的作法）。因此本型別的測試
-/// 全部餐假快照與假 sink、不對外連線。
+/// 全部餵假快照與假 sink、不對外連線。
 ///
 /// **等畫面怎麼等**：站方沒有「重繪完成」訊號，所以照既有可行做法走三件套——
 /// 每串按鍵尾端補一顆重繪鍵、以整張新畫面為比對單位、逾時分級（一般 3 秒、
-/// 登入圓 10 秒；發文的 60 秒等發文功能落地時再加）。
+/// 登入圈 10 秒；發文的 60 秒等發文功能落地時再加）。
 ///
 /// **不重複管連線層已管的事**：連線配額、重複登入的刪除詢問、登入頻率自律都在
 /// `PTTConnection` 層完成。Session 看得到那些畫面但不應答它們——等到連線層處理完、
@@ -30,7 +30,7 @@ import PTTTerminal
 ///
 /// **一次只服務一個操作**：actor 只保證單步互斥，每個 `await` 都是插入點——一個橫跨
 /// 數十次來回的操作在等畫面時，另一個呼叫可以把畫面帶去別的地方，兩邊收到的都是對方
-/// 造成的畫面。因此每個會驅動畫面的公開操作進入時先取一面忙碡旗標，旗標已被持有時
+/// 造成的畫面。因此每個會驅動畫面的公開操作進入時先取一面忙碌旗標，旗標已被持有時
 /// 立即丟 ``PTTSessionError/operationInProgress``。**不排隊**：要序列化請由呼叫端自己
 /// 安排順序，或一條連線配一個 Session。``close()`` 與 ``currentScreen`` 不受此限。
 public actor PTTSession {
@@ -40,7 +40,7 @@ public actor PTTSession {
 	/// 一般畫面的等待上限。
 	public static let standardTimeout: Duration = .seconds(3)
 
-	/// 登入圓的等待上限（站方在踢重複連線前後會插入數秒隨機延遲，故放寬）。
+	/// 登入圈的等待上限（站方在踢重複連線前後會插入數秒隨機延遲，故放寬）。
 	public static let loginTimeout: Duration = .seconds(10)
 
 	/// 單次等待內允許的自動應答次數上限。
@@ -61,6 +61,13 @@ public actor PTTSession {
 	/// 清單畫面的翻頁鍵。
 	public static let listingPageDownKey = "N"
 
+	/// 清單起點編號的上界。
+	///
+	/// 站方把文章編號印在固定七格寬的欄位裡（`mbbsd/bbs.c` 的 `prints("%7d", num)`），
+	/// 本模組的判讀也照著取前七欄（見 ``ArticleListingScanner``）。超過七位數的編號因此
+	/// 讀不回來——與其送出去再判讀失敗，不如在入口就說這個起點不成立。
+	public static let maximumStartingIndex: Int = 9_999_999
+
 	/// 帳號長度上限（站方截斷值）。
 	public static let maximumIdentifierLength = 12
 
@@ -80,7 +87,7 @@ public actor PTTSession {
 	/// Big5-UAO 轉碼器，且站方的 UTF-8 模式無法還原雙色字；維持 Big5 才是完整的那條路。
 	///
 	/// 帳號與密碼一次送完、不等中間的提示畫面：站方接受預先輸入，中途分支
-	/// （錯誤嘗試記錄、暫存檔選單、任意鍵提示…）由全域攜截表自動處理。
+	/// （錯誤嘗試記錄、暫存檔選單、任意鍵提示…）由全域攔截表自動處理。
 	public func logIn(userIdentifier: String, password: String) async throws {
 		let identifier: String = PTTScreenText.trimmed(String(userIdentifier.prefix(Self.maximumIdentifierLength)))
 		let secret: String = PTTScreenText.trimmed(String(password.prefix(Self.maximumPasswordLength)))
@@ -121,11 +128,17 @@ public actor PTTSession {
 	/// `upperIndex`、清單不再往前、或翻頁次數用盡為止。回傳的文章依編號遞增排序。
 	///
 	/// 區間內沒有任何文章時回空清單——「查無」是正常結果、不是錯誤。看板本身沒有文章時
-	/// 同樣回空清單（與 ``newestIndex(ofBoard:)`` 回 `0` 是同一張畫面）。
+	/// 同樣回空清單（與 ``newestIndex(ofBoard:)`` 回 `0` 是同一張畫面），但**只認第一張畫面**：
+	/// 已經讀到過文章之後才出現「沒有文章」的畫面，當成畫面不可信、不當成看板空了，已收到的
+	/// 部分照樣回傳並標成不完整。
 	///
-	/// !!!: 收不齊時**不**靜默截斷：翻頁次數用盡、或收到的編號中間出現斷洞（＝確定漏掉整頁）
-	/// 時，回傳的 ``PTTArticleListing/isComplete`` 為 `false`，已收到的部分照樣附上。清單停在
-	/// `upperIndex` 之前本身不算不完整——請求區間超過看板現有文章時那是正確答案。
+	/// 起點要落在 1 到 ``maximumStartingIndex`` 之間（它會被原樣打進站方的跳號欄位）；
+	/// 終點不設上界——請求區間超過看板現有文章時，收到多少就是多少。
+	///
+	/// !!!: 收不齊時**不**靜默截斷：翻頁次數用盡、收到的編號中間出現斷洞（＝確定漏掉整頁）、
+	/// 或清單讀到一半冒出「沒有文章」的畫面時，回傳的 ``PTTArticleListing/isComplete`` 為
+	/// `false`，已收到的部分照樣附上。清單停在 `upperIndex` 之前本身不算不完整——請求區間
+	/// 超過看板現有文章時那是正確答案。
 	///
 	/// !!!: 不照上游用「游標所在列」當解析起點。上游得先往回跳一大段再跳回來，把目標編號
 	/// 頂到游標列，然後只解析游標以下——那是為了在沒有編號過濾的前提下確保拿到想要的
@@ -138,7 +151,9 @@ public actor PTTSession {
 	) async throws -> PTTArticleListing {
 		try beginOperation()
 		defer { endOperation() }
-		guard lowerIndex >= 1, lowerIndex <= upperIndex else { throw PTTSessionError.invalidIndexRange }
+		guard lowerIndex >= 1, lowerIndex <= Self.maximumStartingIndex, lowerIndex <= upperIndex else {
+			throw PTTSessionError.invalidIndexRange
+		}
 		try await goToBoard(board)
 		var collected: [Int: PTTArticleSummary] = [:]
 		// 迴圈是走到清單盡頭才停的，還是翻頁次數先用完——兩者的結果長得一樣，只有這裡分得出來。
@@ -150,16 +165,25 @@ public actor PTTSession {
 		var failures = 0
 		var stalls = 0
 		var pages = 0
-		// 迴圈的界在三個計數器上：翻頁到上限、判讀連敗到上限（丟錯）、停滞連續到上限（收手）。
+		// 「這是第幾張畫面」與 `pages` 不是同一件事：判讀失敗與停滯都會再取一張畫面、卻不推進 `pages`。
+		var screens: Int = 0
+		// 迴圈的界在三個計數器上：翻頁到上限、判讀連敗到上限（丟錯）、停滯連續到上限（收手）。
 		while pages < Self.maximumListingPages {
 			let target: PTTScreenTarget = try await performSend(
 				keys,
 				awaiting: [PTTTargetTable.emptyBoard, PTTTargetTable.inBoard],
 				timeout: Self.standardTimeout
 			)
-			if target == PTTTargetTable.emptyBoard { return .init(articles: [], isComplete: true) }
-			var page: [PTTArticleSummary] = []
-			if let screen = latestScreen { page = ArticleListingScanner.summaries(in: screen) }
+			screens += 1
+			if target == PTTTargetTable.emptyBoard {
+				// !!!: 「沒有文章」只在跳號後的**第一張**畫面才認：看板是不是空的，在按下跳號那一刻
+				// 就已經定了。讀到一半才冒出這張，不是看板變空了，是這張畫面不可信（殘影、半重繪，
+				// 或站方把我們踢回一個長得像空看板的地方）——那既不是讀到底、也不該把已收到的
+				// 資料換成一個空清單，交給下面的不完整標記說出來。
+				reachedListingEnd = screens == 1
+				break
+			}
+			let page: [PTTArticleSummary] = latestScreen.map(ArticleListingScanner.summaries(in:)) ?? []
 			guard !page.isEmpty else {
 				failures += 1
 				guard failures <= Self.parseRetryLimit else { throw PTTSessionError.listingParseFailed(board) }
@@ -180,15 +204,13 @@ public actor PTTSession {
 				continue
 			}
 			// !!!: 兩個計數器都只在**真的有進展**時歸零。若「畫面非空」就把 `failures` 歸零，
-			// 判讀失敗與停滞交替出現時它永遠回不到上限，丟錯那條路就走不到——一半的畫面根本
+			// 判讀失敗與停滯交替出現時它永遠回不到上限，丟錯那條路就走不到——一半的畫面根本
 			// 沒讀出來，呼叫端卻收到一份殘缺資料加一個成功。
 			failures = 0
 			stalls = 0
 			pages += 1
 			seen.formUnion(page.lazy.map(\.index))
-			for article in page where (lowerIndex ... upperIndex).contains(article.index) {
-				collected[article.index] = article
-			}
+			Self.collect(page, within: lowerIndex ... upperIndex, into: &collected)
 			// 用整頁最大編號、不用最後一列：不預設畫面列必定遞增。
 			let highest: Int = page.lazy.map(\.index).max() ?? 0
 			guard highest < upperIndex else {
@@ -197,8 +219,7 @@ public actor PTTSession {
 			}
 			keys = [.text(Self.listingPageDownKey)]
 		}
-		let articles: [PTTArticleSummary] = collected.values.sorted { $0.index < $1.index }
-		return .init(articles: articles, isComplete: reachedListingEnd && Self.isContiguous(articles))
+		return Self.listing(from: collected, reachedEnd: reachedListingEnd)
 	}
 
 	/// 送出一串按鍵，然後等到其中一張目標畫面出現。
@@ -245,7 +266,7 @@ public actor PTTSession {
 	///   - screens: 畫面快照流；每次站方重繪後應 yield 一張最新快照。
 	///   - keySink: 送鍵出口。
 	///   - clock: 時間來源；測試注入假時鐘。
-	///   - globalTargets: 全域攜截表，附掛在每一次等待的呼叫端目標之後。
+	///   - globalTargets: 全域攔截表，附掛在每一次等待的呼叫端目標之後。
 	public init(
 		screens: AsyncStream<PTTScreen>,
 		keySink: PTTKeySink,
@@ -262,10 +283,10 @@ public actor PTTSession {
 
 	/// 等畫面的輪詢間隔。
 	///
-	/// !!!: 這裡刻意用輪詢而不是「新畫面到達就嗚醒等待者」。嗚醒式寫法要自己處理
-	/// 逾時與嗚醒的競態、以及等待中被取消時 continuation 的歸屬，複雜度全落在
+	/// !!!: 這裡刻意用輪詢而不是「新畫面到達就喚醒等待者」。喚醒式寫法要自己處理
+	/// 逾時與喚醒的競態、以及等待中被取消時 continuation 的歸屬，複雜度全落在
 	/// 最不該出錯的地方；輪詢版的取消語義直接由睡眠本身提供，也讓假時鐘測試不必
-	/// 模擬嗚醒順序。代價是最多多等一個輪詢間隔——相對於站方重繪的百毫秒級節奏可忽略。
+	/// 模擬喚醒順序。代價是最多多等一個輪詢間隔——相對於站方重繪的百毫秒級節奏可忽略。
 	private static let pollInterval: Duration = .milliseconds(20)
 
 	/// 畫面快照流。
@@ -277,7 +298,7 @@ public actor PTTSession {
 	/// 時間來源。
 	private let clock: SessionClock
 
-	/// 全域攜截表。
+	/// 全域攔截表。
 	private let globalTargets: [PTTScreenTarget]
 
 	/// 全域送鍵節流閘。
@@ -311,7 +332,27 @@ public actor PTTSession {
 		return last.index - first.index + 1 == articles.count
 	}
 
-	/// 啟動快照流的消費（冕等）。
+	/// 把一頁判讀結果裡落在請求區間內的文章收進 `collected`；同一編號以後來的那份覆蓋。
+	private static func collect(
+		_ page: [PTTArticleSummary],
+		within range: ClosedRange<Int>,
+		into collected: inout [Int: PTTArticleSummary]
+	) {
+		for article in page where range.contains(article.index) {
+			collected[article.index] = article
+		}
+	}
+
+	/// 把收集到的文章組成讀取結果：依編號遞增排序，讀到底且編號連號時才算完整。
+	private static func listing(
+		from collected: [Int: PTTArticleSummary],
+		reachedEnd: Bool
+	) -> PTTArticleListing {
+		let articles: [PTTArticleSummary] = collected.values.sorted { $0.index < $1.index }
+		return .init(articles: articles, isComplete: reachedEnd && isContiguous(articles))
+	}
+
+	/// 啟動快照流的消費（冪等）。
 	///
 	/// !!!: 用 `Task.detached` 而非繼承隔離的 `Task`——繼承隔離時整個 `for await`
 	/// 迴圈都算在本 actor 上，讀流與處理流交錯在同一個隔離域裡，反而更難看出
@@ -338,7 +379,7 @@ public actor PTTSession {
 		isStreamFinished = true
 	}
 
-	/// 取下忙碡旗標，取不到就丟錯。
+	/// 取下忙碌旗標，取不到就丟錯。
 	///
 	/// !!!: 檢查與設定之間沒有 `await`，所以在 actor 上是原子的——這正是這面旗標唯一
 	/// 需要成立的性質。加了 `await` 就等於把要防的插入點開回來。
@@ -349,14 +390,14 @@ public actor PTTSession {
 		isPerformingOperation = true
 	}
 
-	/// 放掉忙碡旗標。呼叫端一律以 `defer` 配對，操作丟錯時也要放。
+	/// 放掉忙碌旗標。呼叫端一律以 `defer` 配對，操作丟錯時也要放。
 	///
 	/// 非 `private`：同 ``beginOperation()``。
 	func endOperation() {
 		isPerformingOperation = false
 	}
 
-	/// ``send(_:awaiting:timeout:)`` 的本體，不碰忙碡旗標。
+	/// ``send(_:awaiting:timeout:)`` 的本體，不碰忙碌旗標。
 	///
 	/// 非 `private`：公開操作已經在入口取過旗標，內部再走公開版就會被自己的旗標擋下；
 	/// `PTTSession+ArticleContent.swift` 的逐頁讀取同樣走這裡。
@@ -452,9 +493,14 @@ public actor PTTSession {
 	/// 進看板：先把畫面推回主功能表，再走看板快選。
 	///
 	/// 尾端連送中斷鍵是為了跳過某些看板的進板動畫；動畫若有「任意鍵」或
-	/// 「互動式動畫播放中」的提示，則由全域攜截表接手。
+	/// 「互動式動畫播放中」的提示，則由全域攔截表接手。
+	///
+	/// 板名先驗形狀再送（見 ``BoardName``）：它是進板路徑上呼叫端字串直接變成按鍵的入口，
+	/// 形狀不合法時一顆按鍵都不送、直接丟 ``PTTSessionError/invalidBoardName(_:)``。
+	///
 	/// 非 `private`：`PTTSession+ArticleContent.swift` 同樣要先進板才能跳到文章。
 	func goToBoard(_ board: String) async throws {
+		guard BoardName.isValid(board) else { throw PTTSessionError.invalidBoardName(board) }
 		var keys: [PTTKey] = PTTKey.mainMenuReset
 		keys.append(.text("qs"))
 		keys.append(.text(board))
