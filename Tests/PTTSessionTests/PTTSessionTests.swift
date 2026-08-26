@@ -10,9 +10,9 @@
 import PTTTerminal
 import Testing
 
-/// ``PTTSession`` 登入圓驗證：登入流程、全域支截與退避、送鍵節流、等畫面的界線與逾時。
+/// ``PTTSession`` 登入圈驗證：登入流程、全域攔截與退避、送鍵節流、等畫面的界線與逾時。
 ///
-/// 全程餐假快照與假 sink，注入假時鐘，不對外連線、不等真實時間。
+/// 全程餵假快照與假 sink，注入假時鐘，不對外連線、不等真實時間。
 private final class PTTSessionTests {
 
 	/// 登入成功：一次送完帳號密碼、等到主功能表。
@@ -142,7 +142,7 @@ private final class PTTSessionTests {
 
 	/// 節流退避期間補進來的畫面不算「這次送鍵的回應」。
 	///
-	/// 界線取在真的寫進 sink 的前一刻：退避途中補上的主功能表屬於退避前的残影，
+	/// 界線取在真的寫進 sink 的前一刻：退避途中補上的主功能表屬於退避前的殘影，
 	/// 送鍵之後沒有新畫面，等待就該走到逾時而不是誤判登入成功。
 	@Test
 	private func `screens arriving during the backoff are not counted as the response`() async {
@@ -214,7 +214,7 @@ private final class PTTSessionTests {
 		harness.finish()
 	}
 
-	/// 前一個操作以丟錯收場時忙碡旗標照樣放掉，下一個操作走得下去。
+	/// 前一個操作以丟錯收場時忙碌旗標照樣放掉，下一個操作走得下去。
 	@Test
 	private func `the busy flag is released when an operation throws`() async throws {
 		let harness: SessionHarness = .init()
