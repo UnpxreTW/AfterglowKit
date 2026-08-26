@@ -51,7 +51,7 @@ public enum PTTSessionError: Error, Equatable {
 	/// 或起點大於終點）。終點不設上界——請求區間超過看板現有文章是正常用法。
 	case invalidIndexRange
 
-	/// 連續重試後仍無法讀到文章的任何一頁（footer 行號區間或畫面列合併皮判讀失敗），
+	/// 連續重試後仍無法讀到文章的任何一頁（footer 行號區間或畫面列合併皆判讀失敗），
 	/// 且尚未成功收到過任何一頁——已收到至少一頁時改回傳部分結果並標不完整，
 	/// 不丟這個錯誤（見 ``PTTArticleContent/isComplete``）。
 	case articleReadFailed(board: String, index: Int)
