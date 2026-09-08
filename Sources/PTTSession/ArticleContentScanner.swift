@@ -119,12 +119,12 @@ public enum ArticleContentScanner {
 	/// 那一格空白是格式字串裡的字面值。色碼到判讀端時已經沒了，所以剩下「記號 ＋ 一格空白」。
 	/// 來源 https://github.com/ptt/pttbbs 的 `mbbsd/comments.c`，與 ``PTTCommentType`` 同一處。
 	///
-	/// !!!: 這一關只認前綴、不驗整行格式，兩者刻意不合併：前綴決定這列進不進
-	/// ``PTTArticleContent/commentLines``（進去的都保留原文），整行格式則決定它判不判得成
-	/// ``PTTComment``。代價是這裡是**過近似**——內文行剛好以這三個記號開頭時也會被收成推文
-	/// 原始行；好處是認得出前綴卻判讀不出欄位的列不會被默默丟掉，而是落在
-	/// ``PTTArticleContent/unparsedCommentLineCount`` 裡讓呼叫端看得見。分類收得寬、判讀失敗
-	/// 看得見，比分類收得緊、判錯的列悄悄消失安全。
+	/// - Warning: 這一關只認前綴、不驗整行格式，兩者刻意不合併：前綴決定這列進不進
+	///   ``PTTArticleContent/commentLines``（進去的都保留原文），整行格式則決定它判不判得成
+	///   ``PTTComment``。代價是這裡是**過近似**——內文行剛好以這三個記號開頭時也會被收成推文
+	///   原始行；好處是認得出前綴卻判讀不出欄位的列不會被默默丟掉，而是落在
+	///   ``PTTArticleContent/unparsedCommentLineCount`` 裡讓呼叫端看得見。分類收得寬、判讀失敗
+	///   看得見，比分類收得緊、判錯的列悄悄消失安全。
 	public static func isCommentLine(_ line: String) -> Bool {
 		commentPrefixes.contains { line.hasPrefix($0) }
 	}
@@ -137,10 +137,10 @@ public enum ArticleContentScanner {
 	/// 回傳的 `skippedRowCount` 已含分隔線列（``headerSeparatorRowCount``），供呼叫端
 	/// 直接拿去跳過表頭 + 分隔線、不必再另外加一次。
 	///
-	/// !!!: 「末列空白再減一」的判準是「畫面上這一列是不是空白」，推論成因是 pmore 依此
-	/// 決定實際渲染幾列表頭；未經真實帳號連線覆核是否恰好對應站方 `fh.lines` 的內部值——
-	/// 若判斷錯誤，`mergeContentRows` 的總數比對通常會抓到（見該函式型別註解），不會靜默
-	/// 錯位，但仍屬未證實假設，掛真帳號實測後若有出入，修這裡即可。
+	/// - Warning: 「末列空白再減一」的判準是「畫面上這一列是不是空白」，推論成因是 pmore 依此
+	///   決定實際渲染幾列表頭；未經真實帳號連線覆核是否恰好對應站方 `fh.lines` 的內部值——
+	///   若判斷錯誤，`mergeContentRows` 的總數比對通常會抓到（見該函式型別註解），不會靜默
+	///   錯位，但仍屬未證實假設，掛真帳號實測後若有出入，修這裡即可。
 	static func header(in rows: [[PTTCell]]) -> (header: PTTArticleHeader?, skippedRowCount: Int) {
 		guard let firstRow = rows.first else { return (nil, 0) }
 		let firstLine: String = PTTScreenText.trimmed(rowText(firstRow))
@@ -161,10 +161,10 @@ public enum ArticleContentScanner {
 	/// 剛好填滿時不印，此時只能靠合併後的總數比對抓出判讀錯了——這正是 `expectedLineCount`
 	/// 存在的理由，折行記號本身只當輔助、不當唯一判準（見型別註解）。
 	///
-	/// !!!: 這個訊號天生有歧義——若某個檔案行本身就以反斜線結尾（原始內容，非折行記號），
-	/// 會被誤判成續行、與下一列黏成一行。安全網是總數比對：誤黏會讓合併後行數少於
-	/// `expectedLineCount`（兩列變一行），多數情況下會觸發整頁作廢重取，不會靜默留下
-	/// 錯誤內容；極端情況（多處誤判剛好互相抵消總數）仍可能漏網，未進一步防禦。
+	/// - Warning: 這個訊號天生有歧義——若某個檔案行本身就以反斜線結尾（原始內容，非折行記號），
+	///   會被誤判成續行、與下一列黏成一行。安全網是總數比對：誤黏會讓合併後行數少於
+	///   `expectedLineCount`（兩列變一行），多數情況下會觸發整頁作廢重取，不會靜默留下
+	///   錯誤內容；極端情況（多處誤判剛好互相抵消總數）仍可能漏網，未進一步防禦。
 	static func mergeContentRows(_ rows: [[PTTCell]], expectedLineCount: Int) -> [String]? {
 		guard expectedLineCount >= 0 else { return nil }
 		guard expectedLineCount > 0 else { return rows.isEmpty ? [] : nil }
